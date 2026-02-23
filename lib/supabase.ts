@@ -1,27 +1,59 @@
 import 'react-native-url-polyfill/auto';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 
+// ──────────────────────────────────────────────────────────
+// Safe Supabase initialization
+// ──────────────────────────────────────────────────────────
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-});
+const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
-AppState.addEventListener('change', (state) => {
-  if (state === 'active') {
-    supabase.auth.startAutoRefresh();
-  } else {
-    supabase.auth.stopAutoRefresh();
-  }
-});
+if (!isSupabaseConfigured) {
+  console.warn(
+    '[Supabase] Missing environment variables: EXPO_PUBLIC_SUPABASE_URL and/or EXPO_PUBLIC_SUPABASE_ANON_KEY. ' +
+    'Supabase features will be unavailable. Please connect Supabase to your project.'
+  );
+}
+
+// Only create the real client when credentials are available.
+// When they're missing we use a placeholder URL so the client can be
+// instantiated without throwing – every actual request will still fail
+// gracefully because the URL/key are invalid, but the app won't crash
+// on startup.
+export const supabase: SupabaseClient = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        storage: AsyncStorage,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false,
+      },
+    })
+  : createClient('https://placeholder.supabase.co', 'placeholder-anon-key', {
+      auth: {
+        storage: AsyncStorage,
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    });
+
+/** Whether the Supabase client has valid credentials */
+export const isSupabaseAvailable = isSupabaseConfigured;
+
+// Only set up auto-refresh when Supabase is properly configured
+if (isSupabaseConfigured) {
+  AppState.addEventListener('change', (state) => {
+    if (state === 'active') {
+      supabase.auth.startAutoRefresh();
+    } else {
+      supabase.auth.stopAutoRefresh();
+    }
+  });
+}
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -61,9 +93,24 @@ export interface ParentVoice {
 }
 
 // ──────────────────────────────────────────────────────────
-// Database helpers
+// Helpers
+// ──────────────────────────────────────────────────────────
+const SUPABASE_NOT_CONFIGURED_ERROR = {
+  message: 'Supabase is not configured. Please connect Supabase to your project.',
+  details: '',
+  hint: 'Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your environment.',
+  code: 'SUPABASE_NOT_CONFIGURED',
+  name: 'SupabaseNotConfiguredError',
+};
+
+// ──────────────────────────────────────────────────────────
+// Database helpers – each one guards against missing config
 // ──────────────────────────────────────────────────────────
 export async function upsertUserProfile(userId: string, email: string, fullName?: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] upsertUserProfile skipped – Supabase not configured.');
+    return SUPABASE_NOT_CONFIGURED_ERROR;
+  }
   const { error } = await supabase.from('users').upsert(
     {
       id: userId,
@@ -77,6 +124,10 @@ export async function upsertUserProfile(userId: string, email: string, fullName?
 }
 
 export async function createChild(data: Omit<Child, 'id' | 'created_at' | 'updated_at'>) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] createChild skipped – Supabase not configured.');
+    return { child: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
   const { data: child, error } = await supabase
     .from('children')
     .insert(data)
@@ -86,6 +137,10 @@ export async function createChild(data: Omit<Child, 'id' | 'created_at' | 'updat
 }
 
 export async function updateChild(id: string, data: Partial<Child>) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] updateChild skipped – Supabase not configured.');
+    return { child: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
   const { data: child, error } = await supabase
     .from('children')
     .update({ ...data, updated_at: new Date().toISOString() })
@@ -96,6 +151,10 @@ export async function updateChild(id: string, data: Partial<Child>) {
 }
 
 export async function getChildren(userId: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] getChildren skipped – Supabase not configured.');
+    return { children: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
   const { data, error } = await supabase
     .from('children')
     .select('*')
@@ -105,6 +164,10 @@ export async function getChildren(userId: string) {
 }
 
 export async function createParentVoice(data: Omit<ParentVoice, 'id' | 'created_at' | 'updated_at'>) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] createParentVoice skipped – Supabase not configured.');
+    return { voice: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
   const { data: voice, error } = await supabase
     .from('parent_voices')
     .insert(data)
@@ -114,6 +177,10 @@ export async function createParentVoice(data: Omit<ParentVoice, 'id' | 'created_
 }
 
 export async function updateParentVoice(id: string, data: Partial<ParentVoice>) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] updateParentVoice skipped – Supabase not configured.');
+    return { voice: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
   const { data: voice, error } = await supabase
     .from('parent_voices')
     .update({ ...data, updated_at: new Date().toISOString() })
@@ -124,6 +191,10 @@ export async function updateParentVoice(id: string, data: Partial<ParentVoice>) 
 }
 
 export async function getParentVoices(userId: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] getParentVoices skipped – Supabase not configured.');
+    return { voices: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
   const { data, error } = await supabase
     .from('parent_voices')
     .select('*')
