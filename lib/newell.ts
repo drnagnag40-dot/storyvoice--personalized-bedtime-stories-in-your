@@ -255,3 +255,125 @@ Glowing nightlight, moonlight through curtains, whimsical and warm.
 Story title: "${storyTitle}". Watercolour style, pastel colours, gentle and magical.
 `.trim();
 }
+
+// ──────────────────────────────────────────────────────────
+// Story Art Style Themes (for AI Family Portrait transformation)
+// ──────────────────────────────────────────────────────────
+export interface ArtStyle {
+  id: string;
+  label: string;
+  emoji: string;
+  description: string;
+  transformPrompt: string;
+}
+
+export const STORY_ART_STYLES: ArtStyle[] = [
+  {
+    id: 'space_captain',
+    label: 'Space Captain',
+    emoji: '🚀',
+    description: 'Galactic hero among the stars',
+    transformPrompt: 'Transform this photo into a whimsical children\'s book illustration of the person as a space captain hero, wearing a shiny space suit with golden stars, floating among colourful nebulae and planets. Watercolour style, soft pastel colours, magical and dreamlike. Keep the face recognisable and cute.',
+  },
+  {
+    id: 'brave_knight',
+    label: 'Brave Knight',
+    emoji: '⚔️',
+    description: 'Noble guardian of the realm',
+    transformPrompt: 'Transform this photo into a charming children\'s book illustration of the person as a brave little knight in gleaming golden armour, holding a shining shield with stars, in a magical enchanted forest at twilight. Soft watercolour style, warm fairy-tale colours, gentle and heroic. Keep the face recognisable.',
+  },
+  {
+    id: 'forest_fairy',
+    label: 'Forest Fairy',
+    emoji: '🧚',
+    description: 'Magical keeper of the woods',
+    transformPrompt: 'Transform this photo into an enchanting children\'s book illustration of the person as a glowing forest fairy with delicate wings, surrounded by fireflies and moonflowers in a magical woodland. Soft watercolour style, luminous greens and purples, dreamy and peaceful. Keep the face recognisable.',
+  },
+  {
+    id: 'ocean_explorer',
+    label: 'Ocean Explorer',
+    emoji: '🐋',
+    description: 'Adventurer of the deep seas',
+    transformPrompt: 'Transform this photo into a whimsical children\'s book illustration of the person as a joyful ocean explorer, surrounded by friendly sea creatures, glowing jellyfish and coral castles in a magical underwater world. Watercolour style, deep blues and teals, wonder-filled. Keep the face recognisable.',
+  },
+];
+
+// ──────────────────────────────────────────────────────────
+// Quiet Time Reflection Questions builder
+// ──────────────────────────────────────────────────────────
+export function buildReflectionQuestionsPrompt(
+  storyTitle: string,
+  storyContent: string,
+  childName: string,
+  lifeNotes?: string | null
+): string {
+  const lifeContext = lifeNotes
+    ? `Things about ${childName} right now: ${lifeNotes}.`
+    : '';
+  const storyExcerpt = storyContent.slice(0, 300);
+  return `
+You are a gentle, wise bedtime companion. Generate exactly 2-3 short, warm reflection questions for a child named ${childName} after hearing the story "${storyTitle}".
+
+Story excerpt: "${storyExcerpt}..."
+
+${lifeContext}
+
+RULES:
+- Each question should be tender, open-ended, and connect the story's moral to the child's real life.
+- Questions should be calming, not exciting. They invite quiet thought, not energetic answers.
+- Use "you" directly to speak to ${childName}.
+- Keep each question under 15 words.
+- Format: Return ONLY the questions, one per line, no numbering, no extra text.
+- Focus on themes like: kindness, bravery, friendship, love, gratitude, dreams.
+`.trim();
+}
+
+// ──────────────────────────────────────────────────────────
+// Welcome Home Greeting builder
+// ──────────────────────────────────────────────────────────
+export function buildWelcomeGreetingPrompt(
+  narratorPersonality: NarratorPersonality,
+  childName: string,
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night'
+): string {
+  const greeting = timeOfDay === 'morning' ? 'Good morning' :
+    timeOfDay === 'afternoon' ? 'Good afternoon' :
+    timeOfDay === 'evening' ? 'Good evening' : 'Good night';
+  return `
+You are ${narratorPersonality.name} ${narratorPersonality.species}, the beloved StoryVoice narrator.
+Write a warm, personal welcome greeting for ${childName} who has just opened the app.
+Style: ${narratorPersonality.style}
+Time of day: ${timeOfDay} (${greeting})
+
+RULES:
+- Keep it to 2-3 sentences maximum.
+- Make it feel magical and personal, like the narrator genuinely missed ${childName}.
+- End with a gentle invitation to start a bedtime story together.
+- Keep it sweet, brief, and in the narrator's unique voice style.
+- No title, no formatting — just the greeting text.
+${buildNarratorStyleGuide(narratorPersonality.style)}
+`.trim();
+}
+
+// ──────────────────────────────────────────────────────────
+// Story Growth Themes extractor
+// ──────────────────────────────────────────────────────────
+export function buildGrowthThemesPrompt(storyTitles: string[], storyContents: string[]): string {
+  const stories = storyTitles.slice(0, 5).map((title, i) =>
+    `Story ${i + 1}: "${title}" — ${(storyContents[i] ?? '').slice(0, 150)}...`
+  ).join('\n');
+
+  return `
+Analyse these recent bedtime stories and identify the 3 main growth themes present across them.
+
+Stories:
+${stories}
+
+RULES:
+- Return exactly 3 themes as a JSON array.
+- Each theme: { "theme": "Theme Name", "emoji": "emoji", "description": "15 words max", "count": number }
+- Themes should be positive character values like: Kindness, Bravery, Friendship, Curiosity, Compassion, Creativity, Perseverance, Gratitude, Love, Wonder.
+- Count represents how many stories reflect that theme.
+- Return ONLY the JSON array, no other text.
+`.trim();
+}

@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   Dimensions,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,11 +26,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import WarpStarField from '@/components/WarpStarField';
+import PolaroidReveal from '@/components/PolaroidReveal';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
-import { generateText, generateImage } from '@fastshot/ai';
+import { generateText, generateImage, useImageTransform } from '@fastshot/ai';
 import { getChildren, createStory, isSupabaseAvailable, upsertUserPreferences } from '@/lib/supabase';
-import { buildStoryPrompt, buildImagePrompt, NARRATOR_PERSONALITIES, type NarratorPersonality } from '@/lib/newell';
+import { buildStoryPrompt, buildImagePrompt, NARRATOR_PERSONALITIES, STORY_ART_STYLES, type NarratorPersonality, type ArtStyle } from '@/lib/newell';
 import type { Child } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,6 +185,17 @@ export default function CreateStoryScreen() {
   const [generationStep, setGenerationStep] = useState<string>('');
   const [narratorPersonality, setNarratorPersonality] = useState<NarratorPersonality | null>(null);
 
+  // AI Family Portrait state
+  const [showPortraitSection,  setShowPortraitSection]  = useState(false);
+  const [selectedPhotoUri,     setSelectedPhotoUri]     = useState<string | null>(null);
+  const [selectedArtStyle,     setSelectedArtStyle]     = useState<ArtStyle | null>(STORY_ART_STYLES[0]);
+  const [transformedPortrait,  setTransformedPortrait]  = useState<string | null>(null);
+  const [isTransformingPhoto,  setIsTransformingPhoto]  = useState(false);
+  const [transformStep,        setTransformStep]        = useState('');
+
+  // Image transform hook
+  const { transformImage } = useImageTransform();
+
   // Entrance animations
   const headerOpacity  = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
@@ -256,6 +270,57 @@ export default function CreateStoryScreen() {
     // Reanimated shared values are stable refs – safe to omit from deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGenerating]);
+
+  // ── Family Portrait handlers ───────────────────────────────────────────
+  const handlePickPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow access to your photo library to add a family portrait.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets[0]) {
+        setSelectedPhotoUri(result.assets[0].uri);
+        setTransformedPortrait(null); // reset previous transform
+      }
+    } catch (err) {
+      console.error('[FamilyPortrait] Photo picker error:', err);
+      Alert.alert('Error', 'Could not open photo library. Please try again.');
+    }
+  };
+
+  const handleTransformPhoto = async () => {
+    if (!selectedPhotoUri || !selectedArtStyle) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsTransformingPhoto(true);
+    setTransformStep('Preparing your portrait…');
+    try {
+      setTransformStep('AI is painting your portrait…');
+      const result = await transformImage({
+        imageUrl: selectedPhotoUri,
+        prompt: selectedArtStyle.transformPrompt,
+      });
+      const transformed = result?.images?.[0] ?? null;
+      if (transformed) {
+        setTransformedPortrait(transformed);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        throw new Error('No image returned from transform');
+      }
+    } catch (err) {
+      console.error('[FamilyPortrait] Transform error:', err);
+      Alert.alert('Portrait failed', 'Could not transform the photo. Please try again.');
+    } finally {
+      setIsTransformingPhoto(false);
+      setTransformStep('');
+    }
+  };
 
   // ── Generate handler ───────────────────────────────────────────────────
   const handleGenerate = async () => {
@@ -344,15 +409,19 @@ export default function CreateStoryScreen() {
       }
 
       // ── Step 4: Persist story for the player via AsyncStorage ────────
+      // Use transformed portrait as cover if available, otherwise AI generated image
+      const finalImageUrl = transformedPortrait ?? imageUrl;
       const storyEntry = {
         id:          savedStoryId ?? `local_${Date.now()}`,
         title:       storyTitle,
         content:     storyText,
-        imageUrl,
+        imageUrl:    finalImageUrl,
         childName:   child.name,
         theme:       themeObj?.label ?? selectedTheme,
         createdAt:   new Date().toISOString(),
         is_favorite: false,
+        hasFamilyPortrait: Boolean(transformedPortrait),
+        artStyleLabel: selectedArtStyle?.label,
       };
 
       await AsyncStorage.setItem('current_story', JSON.stringify(storyEntry));
@@ -485,6 +554,130 @@ export default function CreateStoryScreen() {
             >
               <Text style={styles.noChildText}>+ Set up a child profile first</Text>
             </TouchableOpacity>
+          )}
+
+          {/* ── AI Family Portrait (Pro Feature) ─────────────────────── */}
+          <TouchableOpacity
+            style={styles.portraitToggleBtn}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowPortraitSection(!showPortraitSection);
+            }}
+            disabled={isGenerating}
+            activeOpacity={0.82}
+          >
+            <LinearGradient
+              colors={['rgba(255,215,0,0.12)', 'rgba(255,215,0,0.04)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            <View style={styles.portraitToggleLeft}>
+              <Text style={styles.portraitToggleEmoji}>📸</Text>
+              <View>
+                <Text style={styles.portraitToggleLabel}>AI Family Portrait</Text>
+                <Text style={styles.portraitToggleSubLabel}>Transform a photo into story art ✨</Text>
+              </View>
+            </View>
+            <View style={styles.portraitProBadge}>
+              <Text style={styles.portraitProText}>PRO</Text>
+            </View>
+            <Text style={styles.portraitToggleChevron}>{showPortraitSection ? '▲' : '▼'}</Text>
+          </TouchableOpacity>
+
+          {showPortraitSection && (
+            <View style={styles.portraitSection}>
+              {/* Art style selection */}
+              <Text style={styles.portraitSectionTitle}>Choose Art Style</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.artStylesRow}>
+                {STORY_ART_STYLES.map((style) => (
+                  <TouchableOpacity
+                    key={style.id}
+                    style={[
+                      styles.artStyleCard,
+                      selectedArtStyle?.id === style.id && styles.artStyleCardSelected,
+                    ]}
+                    onPress={() => {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelectedArtStyle(style);
+                      setTransformedPortrait(null);
+                    }}
+                    disabled={isGenerating}
+                    activeOpacity={0.85}
+                  >
+                    {selectedArtStyle?.id === style.id && (
+                      <LinearGradient
+                        colors={['rgba(255,215,0,0.2)', 'rgba(255,215,0,0.05)']}
+                        style={[StyleSheet.absoluteFill, { borderRadius: Radius.md }]}
+                      />
+                    )}
+                    <Text style={styles.artStyleCardEmoji}>{style.emoji}</Text>
+                    <Text style={[
+                      styles.artStyleCardLabel,
+                      selectedArtStyle?.id === style.id && { color: Colors.celestialGold },
+                    ]}>{style.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Photo picker */}
+              <View style={styles.portraitPickerRow}>
+                <TouchableOpacity
+                  style={styles.pickPhotoBtn}
+                  onPress={() => void handlePickPhoto()}
+                  disabled={isGenerating || isTransformingPhoto}
+                  activeOpacity={0.85}
+                >
+                  {selectedPhotoUri ? (
+                    <Image source={{ uri: selectedPhotoUri }} style={styles.pickedPhotoThumb} />
+                  ) : (
+                    <>
+                      <Text style={styles.pickPhotoBtnEmoji}>🖼️</Text>
+                      <Text style={styles.pickPhotoBtnText}>Upload Photo</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {selectedPhotoUri && !transformedPortrait && (
+                  <TouchableOpacity
+                    style={[styles.transformBtn, isTransformingPhoto && styles.transformBtnDisabled]}
+                    onPress={() => void handleTransformPhoto()}
+                    disabled={isTransformingPhoto || isGenerating}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient
+                      colors={[Colors.celestialGold, Colors.softGold]}
+                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                      style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+                    />
+                    <Text style={styles.transformBtnText}>
+                      {isTransformingPhoto ? '✨ Painting…' : `✨ Transform`}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Polaroid reveal */}
+              {(selectedPhotoUri && (isTransformingPhoto || transformedPortrait)) && (
+                <View style={styles.polaroidContainer}>
+                  <PolaroidReveal
+                    imageUri={transformedPortrait}
+                    caption={child?.name ? `${child.name}'s Story Portrait` : 'Story Portrait'}
+                    artStyleLabel={selectedArtStyle?.label}
+                    artStyleEmoji={selectedArtStyle?.emoji}
+                    isTransforming={isTransformingPhoto}
+                    transformStep={transformStep}
+                    width={200}
+                  />
+                  {transformedPortrait && (
+                    <TouchableOpacity
+                      style={styles.retransformLink}
+                      onPress={() => { setTransformedPortrait(null); setSelectedPhotoUri(null); }}
+                    >
+                      <Text style={styles.retransformLinkText}>Change photo or style</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
           )}
 
           {/* ── Theme selection ───────────────────────────────────────── */}
@@ -854,4 +1047,105 @@ const styles = StyleSheet.create({
   nebulaOverlay: {
     backgroundColor: NEBULA_PURPLE,
   },
+
+  // ── AI Family Portrait
+  portraitToggleBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    backgroundColor: Colors.cardBg,
+    borderRadius:    Radius.xl,
+    padding:         Spacing.md,
+    marginBottom:    Spacing.md,
+    borderWidth:     1,
+    borderColor:     'rgba(255,215,0,0.25)',
+    overflow:        'hidden',
+    gap:             8,
+  },
+  portraitToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  portraitToggleEmoji: { fontSize: 22 },
+  portraitToggleLabel: { fontFamily: Fonts.extraBold, fontSize: 14, color: Colors.moonlightCream },
+  portraitToggleSubLabel: { fontFamily: Fonts.regular, fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  portraitProBadge: {
+    backgroundColor: Colors.celestialGold,
+    borderRadius: Radius.full,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  portraitProText: { fontFamily: Fonts.black, fontSize: 9, color: Colors.deepSpace },
+  portraitToggleChevron: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.textMuted },
+
+  portraitSection: {
+    backgroundColor: Colors.cardBg,
+    borderRadius:    Radius.xl,
+    padding:         Spacing.md,
+    marginBottom:    Spacing.lg,
+    borderWidth:     1,
+    borderColor:     Colors.borderColor,
+    gap:             Spacing.md,
+  },
+  portraitSectionTitle: {
+    fontFamily: Fonts.bold,
+    fontSize:   13,
+    color:      Colors.textMuted,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  artStylesRow: { flexGrow: 0 },
+  artStyleCard: {
+    alignItems:      'center',
+    justifyContent:  'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius:    Radius.md,
+    borderWidth:     1,
+    borderColor:     Colors.borderColor,
+    backgroundColor: Colors.inputBg,
+    marginRight:     8,
+    gap:             4,
+    overflow:        'hidden',
+    minWidth:        72,
+  },
+  artStyleCardSelected: {
+    borderColor: Colors.celestialGold,
+  },
+  artStyleCardEmoji: { fontSize: 22 },
+  artStyleCardLabel: {
+    fontFamily: Fonts.bold,
+    fontSize:   11,
+    color:      Colors.moonlightCream,
+    textAlign:  'center',
+  },
+
+  portraitPickerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  pickPhotoBtn: {
+    width:           80,
+    height:          80,
+    borderRadius:    Radius.md,
+    borderWidth:     2,
+    borderColor:     Colors.borderColor,
+    borderStyle:     'dashed',
+    backgroundColor: Colors.inputBg,
+    alignItems:      'center',
+    justifyContent:  'center',
+    overflow:        'hidden',
+    gap:             4,
+  },
+  pickedPhotoThumb: { width: '100%', height: '100%', borderRadius: Radius.md },
+  pickPhotoBtnEmoji: { fontSize: 22 },
+  pickPhotoBtnText: { fontFamily: Fonts.bold, fontSize: 10, color: Colors.textMuted, textAlign: 'center' },
+
+  transformBtn: {
+    flex:            1,
+    height:          44,
+    borderRadius:    Radius.full,
+    alignItems:      'center',
+    justifyContent:  'center',
+    overflow:        'hidden',
+  },
+  transformBtnDisabled: { opacity: 0.55 },
+  transformBtnText: { fontFamily: Fonts.extraBold, fontSize: 13, color: Colors.deepSpace },
+
+  polaroidContainer: { alignItems: 'center', gap: Spacing.sm },
+  retransformLink: { marginTop: 4 },
+  retransformLinkText: { fontFamily: Fonts.medium, fontSize: 12, color: Colors.textMuted, textDecorationLine: 'underline' },
 });

@@ -527,6 +527,23 @@ export default function SettingsScreen() {
     },
   ];
 
+  const familyRows: SettingRow[] = [
+    {
+      icon: '👨‍👩‍👧‍👦',
+      label: 'Family Sharing Hub',
+      value: 'Link accounts & share stories',
+      chevron: true,
+      onPress: () => router.push('/(main)/family-sharing'),
+    },
+    {
+      icon: '📖',
+      label: 'Memory Book',
+      value: "Milestones & growth themes",
+      chevron: true,
+      onPress: () => router.push('/(main)/milestone-book'),
+    },
+  ];
+
   const accountRows: SettingRow[] = [
     {
       icon: '🚪',
@@ -646,12 +663,15 @@ export default function SettingsScreen() {
         {/* App Settings Section */}
         <Section title="App Settings" items={appRows} delay={200} />
 
+        {/* Family & Memories Section */}
+        <Section title="✦ Family & Memories" items={familyRows} delay={280} />
+
         {/* Account Section */}
         <Section title="Account" items={accountRows} delay={350} />
 
         {/* App version */}
         <Animated.View style={[versionStyle, styles.versionRow]}>
-          <Text style={styles.versionText}>StoryVoice · Phase 3 · v3.0</Text>
+          <Text style={styles.versionText}>StoryVoice · Phase 5 · v5.0</Text>
           <Text style={styles.versionSubText}>Made with 🌙 for sleepy little ones</Text>
         </Animated.View>
       </ScrollView>

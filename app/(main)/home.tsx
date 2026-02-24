@@ -48,6 +48,8 @@ import {
   type LocalDataSummary,
   type MigrationResult,
 } from '@/lib/migrationService';
+import { NARRATOR_PERSONALITIES, buildWelcomeGreetingPrompt } from '@/lib/newell';
+import { generateText } from '@fastshot/ai';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android') {
@@ -251,6 +253,13 @@ export default function HomeScreen() {
   const [migrationResult,     setMigrationResult]     = useState<MigrationResult | null>(null);
   const migrationCheckedRef = useRef(false);
 
+  // ── Welcome Home Greeting state
+  const [showGreeting,      setShowGreeting]      = useState(false);
+  const [greetingText,      setGreetingText]      = useState('');
+  const [greetingNarrator,  setGreetingNarrator]  = useState(NARRATOR_PERSONALITIES[0]);
+  const greetingOpacity = useSharedValue(0);
+  const greetingScale   = useSharedValue(0.9);
+
   const requireParentalGate = useCallback((context: string, action: () => void) => {
     pendingActionRef.current = action;
     setGateContext(context);
@@ -374,6 +383,61 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // ── Welcome Home Greeting check ───────────────────────────────────────────
+  // Triggers after the app hasn't been opened for > 3 hours
+  useEffect(() => {
+    void checkAndShowGreeting();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const checkAndShowGreeting = async () => {
+    try {
+      const lastOpenRaw = await AsyncStorage.getItem('last_app_open');
+      const now = Date.now();
+      const THRESHOLD_MS = 3 * 60 * 60 * 1000; // 3 hours
+
+      // Save current open time
+      await AsyncStorage.setItem('last_app_open', String(now));
+
+      // Only show greeting if it's been > 3 hours since last open
+      if (!lastOpenRaw || (now - parseInt(lastOpenRaw, 10)) < THRESHOLD_MS) return;
+
+      // Get selected narrator
+      const narratorId = await AsyncStorage.getItem('selected_narrator_id');
+      const narrator = NARRATOR_PERSONALITIES.find((n) => n.id === narratorId) ?? NARRATOR_PERSONALITIES[0];
+      setGreetingNarrator(narrator);
+
+      // Get child name
+      const childRaw = await AsyncStorage.getItem('pending_child_profile');
+      const childProfile = childRaw ? JSON.parse(childRaw) as { name?: string } : null;
+      const childName = childProfile?.name ?? 'little one';
+
+      // Determine time of day
+      const hour = new Date().getHours();
+      const timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night' =
+        hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+
+      try {
+        const prompt = buildWelcomeGreetingPrompt(narrator, childName, timeOfDay);
+        const greeting = await generateText({ prompt });
+        if (greeting?.trim()) {
+          setGreetingText(greeting.trim());
+        } else {
+          setGreetingText(`Welcome back! ${childName} will love tonight's bedtime story. Shall we create one together?`);
+        }
+      } catch {
+        setGreetingText(`Welcome back! Time for a magical bedtime story. ${narrator.previewText}`);
+      }
+
+      setShowGreeting(true);
+      greetingOpacity.value = withTiming(1, { duration: 600 });
+      greetingScale.value   = withSpring(1, { damping: 14, stiffness: 100 });
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (err) {
+      console.error('[WelcomeGreeting] error:', err);
+    }
+  };
+
   // Animate layout when favorites count changes
   useEffect(() => {
     const hasFavs = favoriteStories.length > 0;
@@ -484,6 +548,11 @@ export default function HomeScreen() {
   const headerStyle  = useAnimatedStyle(() => ({ opacity: headerOpacity.value }));
   const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
   const activeVoice  = voices.find((v) => v.id === activeVoiceId) ?? voices[0] ?? null;
+
+  const greetingStyle = useAnimatedStyle(() => ({
+    opacity:   greetingOpacity.value,
+    transform: [{ scale: greetingScale.value }],
+  }));
 
   // ── Story section renderer ─────────────────────────────────────────────────────
   const renderStoryList = (data: Story[], emptyMsg?: string) => {
@@ -915,6 +984,58 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* ── Welcome Home Greeting ────────────────────────────────────────── */}
+      <Modal
+        visible={showGreeting}
+        transparent
+        animationType="none"
+        onRequestClose={() => setShowGreeting(false)}
+      >
+        <TouchableOpacity
+          style={styles.greetingOverlay}
+          activeOpacity={1}
+          onPress={() => setShowGreeting(false)}
+        >
+          <Animated.View style={[styles.greetingCard, greetingStyle]}>
+            <LinearGradient
+              colors={[Colors.midnightNavy, Colors.deepSpace, '#1F1040']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            {/* Gold corner ornaments */}
+            <View style={styles.greetingCornerTL} />
+            <View style={styles.greetingCornerBR} />
+
+            <Text style={styles.greetingNarratorEmoji}>{greetingNarrator.emoji}</Text>
+            <Text style={[styles.greetingNarratorName, { color: greetingNarrator.accentColor }]}>
+              {greetingNarrator.name} {greetingNarrator.species}
+            </Text>
+            <Text style={styles.greetingDivider}>· · ·</Text>
+            <Text style={styles.greetingMessage}>{greetingText}</Text>
+            <TouchableOpacity
+              style={styles.greetingCTA}
+              onPress={() => {
+                setShowGreeting(false);
+                router.push('/(main)/create-story');
+              }}
+              activeOpacity={0.88}
+            >
+              <LinearGradient
+                colors={[Colors.celestialGold, Colors.softGold]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+              />
+              <Text style={styles.greetingCTAText}>🪄  Begin Tonight&apos;s Story</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.greetingDismiss}
+              onPress={() => setShowGreeting(false)}
+            >
+              <Text style={styles.greetingDismissText}>Maybe later</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -1240,4 +1361,83 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderColor,
   },
   voiceModalCloseText: { fontFamily: Fonts.bold, fontSize: 14, color: Colors.textMuted },
+
+  // ── Welcome Home Greeting
+  greetingOverlay: {
+    flex:            1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems:      'center',
+    justifyContent:  'center',
+    padding:         Spacing.xl,
+  },
+  greetingCard: {
+    width:           '100%',
+    borderRadius:    Radius.xl,
+    borderWidth:     1.5,
+    borderColor:     'rgba(255,215,0,0.3)',
+    padding:         Spacing.xl,
+    alignItems:      'center',
+    overflow:        'hidden',
+    gap:             Spacing.md,
+    shadowColor:     Colors.celestialGold,
+    shadowOffset:    { width: 0, height: 12 },
+    shadowOpacity:   0.25,
+    shadowRadius:    32,
+    elevation:       20,
+  },
+  greetingCornerTL: {
+    position: 'absolute', top: 0, left: 0,
+    width: 50, height: 50,
+    borderTopLeftRadius: Radius.xl,
+    borderTopWidth: 2, borderLeftWidth: 2,
+    borderColor: 'rgba(255,215,0,0.45)',
+  },
+  greetingCornerBR: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 50, height: 50,
+    borderBottomRightRadius: Radius.xl,
+    borderBottomWidth: 2, borderRightWidth: 2,
+    borderColor: 'rgba(255,215,0,0.45)',
+  },
+  greetingNarratorEmoji: { fontSize: 52 },
+  greetingNarratorName: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   16,
+    letterSpacing: 0.5,
+  },
+  greetingDivider: {
+    fontFamily: Fonts.medium,
+    fontSize:   16,
+    color:      'rgba(255,215,0,0.4)',
+    letterSpacing: 6,
+  },
+  greetingMessage: {
+    fontFamily: Fonts.medium,
+    fontSize:   16,
+    color:      Colors.moonlightCream,
+    textAlign:  'center',
+    lineHeight: 26,
+    fontStyle:  'italic',
+  },
+  greetingCTA: {
+    width:         '100%',
+    borderRadius:  Radius.full,
+    overflow:      'hidden',
+    paddingVertical: 16,
+    alignItems:    'center',
+    marginTop:     Spacing.sm,
+  },
+  greetingCTAText: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   15,
+    color:      Colors.deepSpace,
+  },
+  greetingDismiss: {
+    paddingVertical: Spacing.sm,
+  },
+  greetingDismissText: {
+    fontFamily: Fonts.medium,
+    fontSize:   13,
+    color:      Colors.textMuted,
+  },
 });

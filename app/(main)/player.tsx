@@ -49,7 +49,8 @@ import StarField from '@/components/StarField';
 import AmbientMixer from '@/components/AmbientMixer';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { toggleStoryFavorite, isSupabaseAvailable } from '@/lib/supabase';
-import { NARRATOR_PERSONALITIES, type NarratorPersonality } from '@/lib/newell';
+import { NARRATOR_PERSONALITIES, buildReflectionQuestionsPrompt, type NarratorPersonality } from '@/lib/newell';
+import { generateText } from '@fastshot/ai';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -137,6 +138,16 @@ export default function PlayerScreen() {
 
   // Reading progress
   const [scrollProgress, setScrollProgress] = useState(0);
+
+  // Quiet Time Reflections
+  const [showQuietTimeBtn,   setShowQuietTimeBtn]   = useState(false);
+  const [quietTimeActive,    setQuietTimeActive]    = useState(false);
+  const [reflectionQuestions, setReflectionQuestions] = useState<string[]>([]);
+  const [isLoadingReflections, setIsLoadingReflections] = useState(false);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Glow-Reflect border animation
+  const glowBorderPulse = useSharedValue(0);
 
   // ── Refs for resources that MUST be cleaned up ────────────────────────────
   // Storing intervals/timeouts in refs ensures they survive re-renders and can
@@ -279,7 +290,13 @@ export default function PlayerScreen() {
         clearInterval(sleepIntervalRef.current);
         sleepIntervalRef.current = null;
       }
+      if (heartbeatIntervalRef.current !== null) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+      cancelAnimation(glowBorderPulse);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleTimerSelect = useCallback((minutes: number) => {
@@ -288,6 +305,89 @@ export default function PlayerScreen() {
     setShowTimerModal(false);
     startSleepTimer(minutes);
   }, [startSleepTimer]);
+
+  // ── Quiet Time Reflections ─────────────────────────────────────────────
+  const startHeartbeatHaptics = useCallback(() => {
+    if (heartbeatIntervalRef.current !== null) return;
+    // Heartbeat pattern: double-pulse every 2.8 seconds (lub-dub)
+    let pulsePhase = 0;
+    heartbeatIntervalRef.current = setInterval(() => {
+      pulsePhase++;
+      // Phase 0: first beat (lub)
+      if (pulsePhase % 3 === 0) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setTimeout(() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }, 220);
+      }
+    }, 2800);
+  }, []);
+
+  const stopHeartbeatHaptics = useCallback(() => {
+    if (heartbeatIntervalRef.current !== null) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  }, []);
+
+  const handleBeginQuietTime = useCallback(async () => {
+    if (!story) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setQuietTimeActive(true);
+    setIsLoadingReflections(true);
+
+    // Start glow border pulsing
+    glowBorderPulse.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0.3, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+      false
+    );
+
+    // Start heartbeat haptics
+    startHeartbeatHaptics();
+
+    try {
+      // Get child life notes from AsyncStorage
+      const childRaw = await AsyncStorage.getItem('pending_child_profile');
+      const childProfile = childRaw ? JSON.parse(childRaw) as { life_notes?: string; name?: string } : null;
+      const lifeNotes = childProfile?.life_notes ?? null;
+      const childName = childProfile?.name ?? story.childName;
+
+      const prompt = buildReflectionQuestionsPrompt(
+        story.title,
+        story.content,
+        childName,
+        lifeNotes
+      );
+      const raw = await generateText({ prompt });
+      if (raw) {
+        const questions = raw.trim().split('\n').filter((q) => q.trim().length > 0).slice(0, 3);
+        setReflectionQuestions(questions);
+      }
+    } catch (err) {
+      console.error('[QuietTime] Failed to generate reflections:', err);
+      // Fallback questions
+      setReflectionQuestions([
+        `What was your favourite part of the story?`,
+        `How did the story make you feel?`,
+        `What did you learn from tonight's story?`,
+      ]);
+    } finally {
+      setIsLoadingReflections(false);
+    }
+  }, [story, glowBorderPulse, startHeartbeatHaptics]);
+
+  const handleEndQuietTime = useCallback(() => {
+    setQuietTimeActive(false);
+    setReflectionQuestions([]);
+    cancelAnimation(glowBorderPulse);
+    glowBorderPulse.value = withTiming(0, { duration: 600 });
+    stopHeartbeatHaptics();
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [glowBorderPulse, stopHeartbeatHaptics]);
 
   // ── Favourite toggle ───────────────────────────────────────────────────────
   const handleToggleFavorite = useCallback(async () => {
@@ -338,7 +438,12 @@ export default function PlayerScreen() {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const totalScrollable = contentSize.height - layoutMeasurement.height;
     if (totalScrollable > 0) {
-      setScrollProgress(Math.min(contentOffset.y / totalScrollable, 1));
+      const progress = Math.min(contentOffset.y / totalScrollable, 1);
+      setScrollProgress(progress);
+      // Show Quiet Time button when reader is near the end
+      if (progress >= 0.85 && !showQuietTimeBtn && !quietTimeActive) {
+        setShowQuietTimeBtn(true);
+      }
     }
   };
 
@@ -364,6 +469,17 @@ export default function PlayerScreen() {
   });
 
   const themeGradient = THEME_GRADIENT[story?.theme ?? ''] ?? [Colors.softPurple, Colors.deepPurple];
+
+  // Glow-Reflect border style
+  const glowBorderStyle = useAnimatedStyle(() => {
+    const borderOpacity = interpolate(glowBorderPulse.value, [0, 1], [0, 1], Extrapolation.CLAMP);
+    const shadowRadius  = interpolate(glowBorderPulse.value, [0, 1], [0, 32], Extrapolation.CLAMP);
+    return {
+      borderColor:   `rgba(255,215,0,${borderOpacity * 0.85})`,
+      shadowOpacity: interpolate(glowBorderPulse.value, [0, 1], [0, 0.9], Extrapolation.CLAMP),
+      shadowRadius,
+    };
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render: Loading
@@ -551,7 +667,74 @@ export default function PlayerScreen() {
           <Text style={styles.endText}>The End</Text>
           <Text style={styles.endStar}>✦</Text>
         </Animated.View>
+
+        {/* ── Quiet Time Reflections ───────────────────────────────────── */}
+        {showQuietTimeBtn && !quietTimeActive && (
+          <Animated.View style={[styles.quietTimeBanner, contentStyle]}>
+            <TouchableOpacity
+              style={styles.quietTimeBtn}
+              onPress={() => void handleBeginQuietTime()}
+              activeOpacity={0.88}
+            >
+              <LinearGradient
+                colors={['rgba(255,215,0,0.15)', 'rgba(255,215,0,0.05)']}
+                style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+              />
+              <Text style={styles.quietTimeBtnEmoji}>🌿</Text>
+              <View style={styles.quietTimeBtnText}>
+                <Text style={styles.quietTimeBtnTitle}>Begin Quiet Time</Text>
+                <Text style={styles.quietTimeBtnSubtitle}>Gentle reflection questions await…</Text>
+              </View>
+              <Text style={styles.quietTimeBtnChevron}>›</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
+        {quietTimeActive && (
+          <View style={styles.quietTimeSection}>
+            <LinearGradient
+              colors={['rgba(255,215,0,0.06)', 'rgba(26,27,65,0.95)', 'rgba(255,215,0,0.04)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            <Text style={styles.quietTimeSectionTitle}>🌟  Quiet Time Reflections</Text>
+            <Text style={styles.quietTimeSectionSubtitle}>
+              Take a breath together and think about tonight&apos;s story…
+            </Text>
+            {isLoadingReflections ? (
+              <View style={styles.reflectionsLoading}>
+                <Text style={styles.reflectionsLoadingEmoji}>✨</Text>
+                <Text style={styles.reflectionsLoadingText}>Crafting your reflection questions…</Text>
+              </View>
+            ) : (
+              <>
+                {reflectionQuestions.map((question, i) => (
+                  <View key={i} style={styles.reflectionQuestion}>
+                    <View style={styles.reflectionQuestionNumber}>
+                      <Text style={styles.reflectionQuestionNumberText}>{i + 1}</Text>
+                    </View>
+                    <Text style={styles.reflectionQuestionText}>{question}</Text>
+                  </View>
+                ))}
+                <TouchableOpacity
+                  style={styles.endQuietTimeBtn}
+                  onPress={handleEndQuietTime}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.endQuietTimeBtnText}>Sweet Dreams 🌙</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
       </ScrollView>
+
+      {/* ── Glow-Reflect border overlay (Quiet Time) ───────────────────── */}
+      {quietTimeActive && (
+        <Animated.View
+          style={[styles.glowReflectBorder, glowBorderStyle]}
+          pointerEvents="none"
+        />
+      )}
 
       {/* ── Glassmorphism bottom controls ──────────────────────────────────── */}
       <Animated.View
@@ -964,6 +1147,124 @@ const styles = StyleSheet.create({
   },
   controlBtnPrimaryIcon:  { fontSize: 20 },
   controlBtnPrimaryLabel: { fontFamily: Fonts.extraBold, fontSize: 14, color: Colors.deepSpace },
+
+  // ── Quiet Time Reflections
+  quietTimeBanner: {
+    paddingHorizontal: Spacing.lg,
+    marginBottom:      Spacing.xl,
+  },
+  quietTimeBtn: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    borderRadius:     Radius.xl,
+    borderWidth:      1,
+    borderColor:      'rgba(255,215,0,0.35)',
+    padding:          Spacing.md,
+    overflow:         'hidden',
+    gap:              Spacing.md,
+  },
+  quietTimeBtnEmoji:    { fontSize: 26 },
+  quietTimeBtnText:     { flex: 1 },
+  quietTimeBtnTitle:    { fontFamily: Fonts.extraBold, fontSize: 15, color: Colors.celestialGold },
+  quietTimeBtnSubtitle: { fontFamily: Fonts.regular,   fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  quietTimeBtnChevron:  { fontFamily: Fonts.bold, fontSize: 22, color: Colors.celestialGold },
+
+  quietTimeSection: {
+    marginHorizontal: Spacing.lg,
+    marginBottom:     Spacing.xl,
+    borderRadius:     Radius.xl,
+    borderWidth:      1.5,
+    borderColor:      'rgba(255,215,0,0.25)',
+    padding:          Spacing.lg,
+    overflow:         'hidden',
+    gap:              Spacing.md,
+  },
+  quietTimeSectionTitle: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   17,
+    color:      Colors.celestialGold,
+    textAlign:  'center',
+  },
+  quietTimeSectionSubtitle: {
+    fontFamily: Fonts.regular,
+    fontSize:   13,
+    color:      Colors.textMuted,
+    textAlign:  'center',
+    lineHeight: 20,
+  },
+  reflectionsLoading: {
+    alignItems:  'center',
+    gap:         Spacing.sm,
+    paddingVertical: Spacing.lg,
+  },
+  reflectionsLoadingEmoji: { fontSize: 32 },
+  reflectionsLoadingText: {
+    fontFamily: Fonts.bold,
+    fontSize:   14,
+    color:      Colors.textMuted,
+    textAlign:  'center',
+  },
+  reflectionQuestion: {
+    flexDirection:  'row',
+    alignItems:     'flex-start',
+    gap:            Spacing.md,
+    backgroundColor: 'rgba(255,215,0,0.05)',
+    borderRadius:   Radius.md,
+    padding:        Spacing.md,
+    borderWidth:    1,
+    borderColor:    'rgba(255,215,0,0.12)',
+  },
+  reflectionQuestionNumber: {
+    width:           26,
+    height:          26,
+    borderRadius:    13,
+    backgroundColor: 'rgba(255,215,0,0.15)',
+    alignItems:      'center',
+    justifyContent:  'center',
+    borderWidth:     1,
+    borderColor:     'rgba(255,215,0,0.3)',
+    flexShrink:      0,
+  },
+  reflectionQuestionNumberText: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   12,
+    color:      Colors.celestialGold,
+  },
+  reflectionQuestionText: {
+    fontFamily: Fonts.medium,
+    fontSize:   15,
+    color:      Colors.moonlightCream,
+    lineHeight: 22,
+    flex:       1,
+  },
+  endQuietTimeBtn: {
+    alignSelf:        'center',
+    marginTop:        Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical:  12,
+    borderRadius:     Radius.full,
+    borderWidth:      1,
+    borderColor:      'rgba(255,215,0,0.3)',
+    backgroundColor:  'rgba(255,215,0,0.08)',
+  },
+  endQuietTimeBtnText: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   14,
+    color:      Colors.celestialGold,
+  },
+
+  // ── Glow-Reflect border
+  glowReflectBorder: {
+    position:     'absolute',
+    top:          0,
+    left:         0,
+    right:        0,
+    bottom:       0,
+    borderWidth:  2.5,
+    borderRadius: 0,
+    shadowColor:  Colors.celestialGold,
+    shadowOffset: { width: 0, height: 0 },
+  },
 
   // ── Sleep Timer Modal
   modalOverlay: {

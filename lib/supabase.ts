@@ -359,6 +359,91 @@ export async function getUserPreferences(userId: string) {
 }
 
 // ──────────────────────────────────────────────────────────
+// Family Sharing  (tables: family_groups, family_members)
+// ──────────────────────────────────────────────────────────
+export interface FamilyGroup {
+  id: string;
+  owner_user_id: string;
+  invite_code: string;
+  group_name: string;
+  created_at: string;
+}
+
+export interface FamilyMember {
+  id: string;
+  group_id: string;
+  user_id: string;
+  role: 'owner' | 'member';
+  joined_at: string;
+}
+
+export async function createFamilyGroup(userId: string, groupName: string): Promise<{ group: FamilyGroup | null; error: unknown }> {
+  if (!isSupabaseConfigured) {
+    return { group: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const { data, error } = await supabase
+    .from('family_groups')
+    .insert({ owner_user_id: userId, invite_code: inviteCode, group_name: groupName })
+    .select()
+    .single();
+  if (!error && data) {
+    // Also add owner as a member
+    await supabase.from('family_members').insert({
+      group_id: (data as FamilyGroup).id,
+      user_id: userId,
+      role: 'owner',
+    });
+  }
+  return { group: data as FamilyGroup | null, error };
+}
+
+export async function joinFamilyGroup(userId: string, inviteCode: string): Promise<{ group: FamilyGroup | null; error: unknown }> {
+  if (!isSupabaseConfigured) {
+    return { group: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { data: group, error: findError } = await supabase
+    .from('family_groups')
+    .select('*')
+    .eq('invite_code', inviteCode.toUpperCase())
+    .single();
+  if (findError || !group) {
+    return { group: null, error: findError ?? { message: 'Invite code not found' } };
+  }
+  const { error: joinError } = await supabase
+    .from('family_members')
+    .upsert({ group_id: (group as FamilyGroup).id, user_id: userId, role: 'member' }, { onConflict: 'group_id,user_id' });
+  return { group: group as FamilyGroup | null, error: joinError };
+}
+
+export async function getFamilyGroup(userId: string): Promise<{ group: FamilyGroup | null; members: FamilyMember[] }> {
+  if (!isSupabaseConfigured) {
+    return { group: null, members: [] };
+  }
+  const { data: memberRow } = await supabase
+    .from('family_members')
+    .select('group_id')
+    .eq('user_id', userId)
+    .single();
+  if (!memberRow) return { group: null, members: [] };
+  const { data: group } = await supabase
+    .from('family_groups')
+    .select('*')
+    .eq('id', (memberRow as { group_id: string }).group_id)
+    .single();
+  const { data: members } = await supabase
+    .from('family_members')
+    .select('*')
+    .eq('group_id', (memberRow as { group_id: string }).group_id);
+  return { group: group as FamilyGroup | null, members: (members as FamilyMember[]) ?? [] };
+}
+
+export async function leaveFamilyGroup(userId: string, groupId: string): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  await supabase.from('family_members').delete().eq('user_id', userId).eq('group_id', groupId);
+}
+
+// ──────────────────────────────────────────────────────────
 // Full user data deletion (for account deletion)
 // ──────────────────────────────────────────────────────────
 export async function deleteAllUserData(userId: string) {
