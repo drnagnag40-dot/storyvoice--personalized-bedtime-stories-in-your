@@ -42,6 +42,8 @@ function WaveBar({ index, isRecording, color = Colors.celestialGold }: WaveBarPr
     } else {
       height.value = withTiming(MIN_HEIGHT, { duration: 400 });
     }
+    // height/index/star props are stable (memoized) – safe to omit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRecording]);
 
   const animStyle = useAnimatedStyle(() => ({

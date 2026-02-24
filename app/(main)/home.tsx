@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -44,13 +44,7 @@ export default function HomeScreen() {
   const headerOpacity = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
 
-  useEffect(() => {
-    void loadData();
-    headerOpacity.value = withTiming(1, { duration: 600 });
-    contentOpacity.value = withDelay(300, withTiming(1, { duration: 700 }));
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       if (user?.id) {
@@ -60,7 +54,7 @@ export default function HomeScreen() {
         } else {
           // Try local storage fallback
           const local = await AsyncStorage.getItem('pending_child_profile');
-          if (local) setChild(JSON.parse(local));
+          if (local) setChild(JSON.parse(local) as Child);
         }
         const { voices: v } = await getParentVoices(user.id);
         if (v) setVoices(v);
@@ -68,15 +62,31 @@ export default function HomeScreen() {
         const firstChildId = children?.[0]?.id;
         const { stories: s } = await getStories(user.id, firstChildId);
         if (s) setStories(s);
+      } else {
+        // Safe Mode: load everything from AsyncStorage when user not available
+        const local = await AsyncStorage.getItem('pending_child_profile');
+        if (local) setChild(JSON.parse(local) as Child);
+        const localStories = await AsyncStorage.getItem('local_stories');
+        if (localStories) setStories(JSON.parse(localStories) as Story[]);
       }
     } catch {
-      // Use local data
+      // Safe Mode fallback: use local data when Supabase is unreachable
       const local = await AsyncStorage.getItem('pending_child_profile');
-      if (local) setChild(JSON.parse(local));
+      if (local) setChild(JSON.parse(local) as Child);
+      const localStories = await AsyncStorage.getItem('local_stories');
+      if (localStories) setStories(JSON.parse(localStories) as Story[]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadData();
+    headerOpacity.value = withTiming(1, { duration: 600 });
+    contentOpacity.value = withDelay(300, withTiming(1, { duration: 700 }));
+    // Reanimated shared values are stable refs – safe to omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadData]);
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [

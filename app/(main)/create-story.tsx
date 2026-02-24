@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -27,7 +27,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import WarpStarField from '@/components/WarpStarField';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { generateText, generateImage } from '@fastshot/ai';
-import { getChildren, createStory, updateStory, isSupabaseAvailable } from '@/lib/supabase';
+import { getChildren, createStory, isSupabaseAvailable } from '@/lib/supabase';
 import { buildStoryPrompt, buildImagePrompt } from '@/lib/newell';
 import type { Child } from '@/lib/supabase';
 
@@ -99,6 +99,8 @@ function ThemeCard({
 
   useEffect(() => {
     glowOpacity.value = withTiming(isSelected ? 1 : 0, { duration: 250 });
+    // glowOpacity is a stable Reanimated shared value ref – safe to omit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSelected]);
 
   const handlePressIn  = () => { scale.value = withTiming(0.95, { duration: 100 }); };
@@ -138,7 +140,7 @@ function ThemeCard({
         <Text style={[styles.themeLabel, isSelected && { color: theme.accentColor }]}>
           {theme.label}
         </Text>
-        <Text style={styles.themeDescription}>{theme.description}</Text>
+        <Text style={styles.themeDescription} numberOfLines={2}>{theme.description}</Text>
 
         {isSelected && (
           <View style={[styles.selectedBadge, { backgroundColor: theme.accentColor }]}>
@@ -154,6 +156,9 @@ function ThemeCard({
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
 const { width: W } = Dimensions.get('window');
+
+// Responsive card padding: tighter on small phones (iPhone SE = 320px)
+const CARD_PADDING = W < 360 ? Spacing.sm : W < 414 ? Spacing.md : Spacing.lg;
 
 export default function CreateStoryScreen() {
   const router = useRouter();
@@ -174,15 +179,30 @@ export default function CreateStoryScreen() {
   const nebulaGlow     = useSharedValue(0);
   const nebulaScale    = useSharedValue(1);
 
+  const loadChild = useCallback(async () => {
+    try {
+      if (user?.id) {
+        const { children } = await getChildren(user.id);
+        if (children && children.length > 0) {
+          setChild(children[0]);
+          return;
+        }
+      }
+      const local = await AsyncStorage.getItem('pending_child_profile');
+      if (local) setChild(JSON.parse(local) as Child);
+    } catch {
+      const local = await AsyncStorage.getItem('pending_child_profile');
+      if (local) setChild(JSON.parse(local) as Child);
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     void loadChild();
     headerOpacity.value  = withTiming(1, { duration: 600 });
     contentOpacity.value = withDelay(300, withTiming(1, { duration: 700 }));
-
-    return () => {
-      // cleanup
-    };
-  }, []);
+    // Reanimated shared values are stable refs – safe to omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadChild]);
 
   // ── Start/stop nebula glow based on isGenerating ───────────────────────
   useEffect(() => {
@@ -209,24 +229,9 @@ export default function CreateStoryScreen() {
       nebulaGlow.value  = withTiming(0, { duration: 400 });
       nebulaScale.value = withTiming(1, { duration: 300 });
     }
+    // Reanimated shared values are stable refs – safe to omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGenerating]);
-
-  const loadChild = async () => {
-    try {
-      if (user?.id) {
-        const { children } = await getChildren(user.id);
-        if (children && children.length > 0) {
-          setChild(children[0]);
-          return;
-        }
-      }
-      const local = await AsyncStorage.getItem('pending_child_profile');
-      if (local) setChild(JSON.parse(local) as Child);
-    } catch {
-      const local = await AsyncStorage.getItem('pending_child_profile');
-      if (local) setChild(JSON.parse(local) as Child);
-    }
-  };
 
   // ── Generate handler ───────────────────────────────────────────────────
   const handleGenerate = async () => {
@@ -260,7 +265,11 @@ export default function CreateStoryScreen() {
         mood:      selectedTheme === 'calming' ? 'very soothing and sleep-inducing' : undefined,
       });
 
-      const storyText = await generateText({ prompt: storyPrompt });
+      const rawText = await generateText({ prompt: storyPrompt });
+      if (!rawText || rawText.trim().length === 0) {
+        throw new Error('AI returned an empty story. Please try again.');
+      }
+      const storyText = rawText.trim();
 
       setGenerationStep('Weaving the magic words…');
 
@@ -301,18 +310,28 @@ export default function CreateStoryScreen() {
       }
 
       // ── Step 4: Persist story for the player via AsyncStorage ────────
-      await AsyncStorage.setItem(
-        'current_story',
-        JSON.stringify({
-          id:        savedStoryId,
-          title:     storyTitle,
-          content:   storyText,
-          imageUrl,
-          childName: child.name,
-          theme:     themeObj?.label ?? selectedTheme,
-          createdAt: new Date().toISOString(),
-        })
-      );
+      const storyEntry = {
+        id:        savedStoryId ?? `local_${Date.now()}`,
+        title:     storyTitle,
+        content:   storyText,
+        imageUrl,
+        childName: child.name,
+        theme:     themeObj?.label ?? selectedTheme,
+        createdAt: new Date().toISOString(),
+      };
+
+      await AsyncStorage.setItem('current_story', JSON.stringify(storyEntry));
+
+      // Also append to local_stories for the Safe Mode bookshelf
+      try {
+        const existingRaw = await AsyncStorage.getItem('local_stories');
+        const existing: typeof storyEntry[] = existingRaw ? JSON.parse(existingRaw) : [];
+        // Keep only the most recent 20 stories to avoid unbounded growth
+        const updated = [storyEntry, ...existing].slice(0, 20);
+        await AsyncStorage.setItem('local_stories', JSON.stringify(updated));
+      } catch (storageErr) {
+        console.warn('[CreateStory] Failed to update local_stories:', storageErr);
+      }
 
       // ── Step 5: Navigate to the immersive player ─────────────────────
       setIsGenerating(false);
@@ -658,18 +677,21 @@ const styles = StyleSheet.create({
   themeCard: {
     backgroundColor: Colors.cardBg,
     borderRadius:    Radius.xl,
-    padding:         Spacing.lg,
+    // Responsive padding: tighter on small screens to prevent text clipping
+    padding:         CARD_PADDING,
     alignItems:      'center',
     borderWidth:     1,
     borderColor:     Colors.borderColor,
     overflow:        'hidden',
-    minHeight:       140,
+    // minHeight scales with responsive padding so content always fits
+    minHeight:       CARD_PADDING * 2 + 110,
     justifyContent:  'center',
-    gap:             6,
+    gap:             4,
   },
-  themeIcon:        { fontSize: 36 },
-  themeLabel:       { fontFamily: Fonts.extraBold, fontSize: 15, color: Colors.moonlightCream, textAlign: 'center' },
-  themeDescription: { fontFamily: Fonts.regular,   fontSize: 11, color: Colors.textMuted, textAlign: 'center' },
+  // Scale icon & text slightly on very small screens
+  themeIcon:        { fontSize: W < 360 ? 28 : 36 },
+  themeLabel:       { fontFamily: Fonts.extraBold, fontSize: W < 360 ? 13 : 15, color: Colors.moonlightCream, textAlign: 'center' },
+  themeDescription: { fontFamily: Fonts.regular,   fontSize: W < 360 ? 10 : 11, color: Colors.textMuted, textAlign: 'center' },
   selectedBadge: {
     position:    'absolute',
     top:         10,

@@ -3,6 +3,16 @@
  *
  * Normal mode  : gentle twinkling stars (identical feel to StarField.tsx)
  * Warp mode    : stars accelerate into elongated streaks, simulating hyperspace
+ *
+ * Bug fixes applied:
+ *  - Cancel ALL running animations (opacity, translateY, scaleY) on every
+ *    mode transition to prevent conflicting animation loops that caused jitter.
+ *  - Fade stars out briefly before repositioning so abrupt translateY/scaleY
+ *    resets are never visible.
+ *  - Replaced rapid 80 ms opacity pulse in warp mode with a steady brightness
+ *    to eliminate the strobe / flicker artefact.
+ *  - Reduced per-star delay coefficient for warp start (0.05× vs 0.1×) so the
+ *    hyperspace transition feels instantaneous and wave-like rather than staggered.
  */
 
 import React, { useEffect, useMemo } from 'react';
@@ -43,79 +53,94 @@ function WarpStar({
   star: StarData;
   accelerating: boolean;
 }) {
-  const opacity    = useSharedValue(Math.random() * 0.3 + 0.1);
+  const opacity    = useSharedValue(0);
   const translateY = useSharedValue(0);
   const scaleY     = useSharedValue(1);
 
   // ── Normal twinkle ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!accelerating) {
+      // Cancel any running animations to avoid conflicts
+      cancelAnimation(opacity);
       cancelAnimation(translateY);
       cancelAnimation(scaleY);
 
-      // Reset to resting state
-      translateY.value = withTiming(0, { duration: 300 });
-      scaleY.value     = withTiming(1, { duration: 300 });
+      // Fade out briefly so the position/scale reset is never visible
+      opacity.value = withTiming(0, { duration: 120 });
+      translateY.value = withTiming(0, { duration: 200 });
+      scaleY.value = withTiming(1, { duration: 200 });
 
-      // Gentle opacity twinkle
+      // After the brief fade-out, start the gentle twinkle
+      const twinkleTarget = Math.random() * 0.5 + 0.35;
       opacity.value = withDelay(
-        star.delay,
+        220 + star.delay,
         withRepeat(
-          withTiming(Math.random() * 0.5 + 0.5, {
-            duration: star.twinkleDuration,
-            easing: Easing.inOut(Easing.sin),
-          }),
+          withSequence(
+            withTiming(twinkleTarget, {
+              duration: star.twinkleDuration,
+              easing: Easing.inOut(Easing.sin),
+            }),
+            withTiming(twinkleTarget * 0.25, {
+              duration: star.twinkleDuration,
+              easing: Easing.inOut(Easing.sin),
+            }),
+          ),
           -1,
-          true
+          false
         )
       );
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accelerating]);
 
   // ── Warp acceleration ───────────────────────────────────────────────────
   useEffect(() => {
     if (accelerating) {
+      // Cancel any running animations to avoid conflicts
       cancelAnimation(opacity);
+      cancelAnimation(translateY);
+      cancelAnimation(scaleY);
 
-      const remainingY = H - star.startY; // distance from star's origin to bottom
+      // Smooth bright flash — no rapid pulse (eliminates strobe artefact)
+      opacity.value = withTiming(0.92, { duration: 180 });
 
-      // Phase 1: flash bright as warp kicks in
-      opacity.value = withSequence(
-        withTiming(1, { duration: 150 }),
-        withRepeat(withTiming(0.85, { duration: 80 }), -1, true)
-      );
+      // Small per-star offset (0.05×) so warp starts as a wave, not a cascade
+      const warpOffset = star.delay * 0.05;
+      const remainingY = H - star.startY + 60;
 
-      // Streak: elongate + shoot downward, then instantly snap back to top
+      // Elongate then snap on each streak cycle
       scaleY.value = withDelay(
-        star.delay * 0.1, // minimal delay so they don't all move at once
+        warpOffset,
         withRepeat(
           withSequence(
             withTiming(6 + star.size * 3, {
-              duration: star.warpDuration * 0.25,
+              duration: star.warpDuration * 0.3,
               easing: Easing.out(Easing.quad),
             }),
-            withTiming(1, { duration: 50 })
+            withTiming(1, { duration: 60 })
           ),
           -1,
           false
         )
       );
 
+      // Shoot downward, then instantly teleport to the top
       translateY.value = withDelay(
-        star.delay * 0.1,
+        warpOffset,
         withRepeat(
           withSequence(
-            withTiming(remainingY + 60, {
+            withTiming(remainingY, {
               duration: star.warpDuration,
               easing: Easing.in(Easing.quad),
             }),
-            withTiming(-(star.startY + 60), { duration: 0 }) // snap back
+            withTiming(-(star.startY + 60), { duration: 0 }) // instant snap
           ),
           -1,
           false
         )
       );
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accelerating]);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -163,7 +188,7 @@ export default function WarpStarField({
       size: Math.random() * 2.5 + 0.8,
       delay: Math.random() * 3000,
       twinkleDuration: Math.random() * 2000 + 1500,
-      warpDuration: Math.random() * 500 + 400, // 400-900 ms per streak cycle
+      warpDuration: Math.random() * 500 + 400, // 400–900 ms per streak cycle
     })),
     [count]
   );

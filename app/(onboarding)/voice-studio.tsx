@@ -178,6 +178,8 @@ export default function VoiceStudioScreen() {
     } catch {
       setIsRecording(false);
     }
+    // pulseScale / recordButtonScale are stable Reanimated shared value refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paragraphIndex]);
 
   const goToNextParagraph = useCallback(() => {
@@ -195,6 +197,8 @@ export default function VoiceStudioScreen() {
         }, 50);
       });
     }
+    // cardOpacity / cardTranslateX are stable Reanimated shared value refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paragraphIndex]);
 
   const goToPrevParagraph = useCallback(() => {
@@ -211,6 +215,8 @@ export default function VoiceStudioScreen() {
         }, 50);
       });
     }
+    // cardOpacity / cardTranslateX are stable Reanimated shared value refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paragraphIndex]);
 
   const handleFinish = async () => {

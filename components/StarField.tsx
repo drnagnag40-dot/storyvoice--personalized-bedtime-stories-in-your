@@ -35,6 +35,8 @@ function SingleStar({ star }: { star: Star }) {
         true
       )
     );
+    // opacity is a stable Reanimated shared value; star props are memoized – safe to omit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const style = useAnimatedStyle(() => ({

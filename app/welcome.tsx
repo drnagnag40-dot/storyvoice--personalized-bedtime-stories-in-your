@@ -67,6 +67,8 @@ export default function WelcomeScreen() {
         false
       )
     );
+    // All referenced values are stable Reanimated shared value refs – safe to omit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const logoStyle = useAnimatedStyle(() => ({
