@@ -46,8 +46,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
+import AmbientMixer from '@/components/AmbientMixer';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { toggleStoryFavorite, isSupabaseAvailable } from '@/lib/supabase';
+import { NARRATOR_PERSONALITIES, type NarratorPersonality } from '@/lib/newell';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -127,6 +129,12 @@ export default function PlayerScreen() {
   const [showTimerModal,    setShowTimerModal]    = useState(false);
   const [timerActive,       setTimerActive]       = useState(false);
 
+  // Ambient mixer
+  const [showAmbientMixer, setShowAmbientMixer] = useState(false);
+
+  // Active narrator
+  const [activeNarrator, setActiveNarrator] = useState<NarratorPersonality | null>(null);
+
   // Reading progress
   const [scrollProgress, setScrollProgress] = useState(0);
 
@@ -159,6 +167,17 @@ export default function PlayerScreen() {
       }
       setStory(parsed);
       setIsFavorite(parsed.is_favorite ?? false);
+
+      // Load active narrator
+      try {
+        const narratorId = await AsyncStorage.getItem('selected_narrator_id');
+        if (narratorId) {
+          const narrator = NARRATOR_PERSONALITIES.find((n) => n.id === narratorId);
+          setActiveNarrator(narrator ?? null);
+        }
+      } catch {
+        // non-fatal
+      }
     } catch (e) {
       console.error('[Player] Failed to load story from AsyncStorage:', e);
       setError('Failed to load story. Please try again.');
@@ -499,8 +518,18 @@ export default function PlayerScreen() {
         {/* Story title */}
         <Animated.View style={[styles.titleSection, contentStyle]}>
           <Text style={styles.storyTitle}>{story.title}</Text>
-          <View style={styles.themeBadge}>
-            <Text style={styles.themeBadgeText}>{story.theme}</Text>
+          <View style={styles.badgeRow}>
+            <View style={styles.themeBadge}>
+              <Text style={styles.themeBadgeText}>{story.theme}</Text>
+            </View>
+            {activeNarrator && (
+              <View style={[styles.narratorBadge, { borderColor: `${activeNarrator.accentColor}60`, backgroundColor: `${activeNarrator.glowColor}18` }]}>
+                <Text style={styles.narratorBadgeEmoji}>{activeNarrator.emoji}</Text>
+                <Text style={[styles.narratorBadgeText, { color: activeNarrator.accentColor }]}>
+                  {activeNarrator.name}
+                </Text>
+              </View>
+            )}
           </View>
         </Animated.View>
 
@@ -577,6 +606,18 @@ export default function PlayerScreen() {
             </TouchableOpacity>
           </Animated.View>
 
+          {/* Sound Waves / Ambient Mixer */}
+          <TouchableOpacity
+            style={[styles.controlBtn, showAmbientMixer && styles.controlBtnSoundsActive]}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowAmbientMixer(true);
+            }}
+          >
+            <Text style={styles.controlBtnIcon}>🌊</Text>
+            <Text style={styles.controlBtnLabel}>Sounds</Text>
+          </TouchableOpacity>
+
           {/* Sleep timer toggle */}
           <TouchableOpacity
             style={[styles.controlBtn, timerActive && styles.controlBtnTimerActive]}
@@ -592,6 +633,12 @@ export default function PlayerScreen() {
           </TouchableOpacity>
         </View>
       </Animated.View>
+
+      {/* ── Ambient Mixer Bottom Sheet ──────────────────────────────────── */}
+      <AmbientMixer
+        visible={showAmbientMixer}
+        onClose={() => setShowAmbientMixer(false)}
+      />
 
       {/* ── Sleep Timer Modal ──────────────────────────────────────────────── */}
       <Modal
@@ -797,6 +844,12 @@ const styles = StyleSheet.create({
     color:      Colors.moonlightCream,
     lineHeight: 32,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap:      'wrap',
+    gap:           8,
+    alignItems:    'center',
+  },
   themeBadge: {
     alignSelf:         'flex-start',
     backgroundColor:   'rgba(255,215,0,0.12)',
@@ -807,6 +860,17 @@ const styles = StyleSheet.create({
     borderColor:       'rgba(255,215,0,0.3)',
   },
   themeBadgeText: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.celestialGold },
+  narratorBadge: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    paddingHorizontal: 10,
+    paddingVertical:   4,
+    borderRadius:      Radius.full,
+    borderWidth:       1,
+  },
+  narratorBadgeEmoji: { fontSize: 14 },
+  narratorBadgeText:  { fontFamily: Fonts.bold, fontSize: 11 },
 
   // ── Glassmorphism story card
   storyCard: {
@@ -874,6 +938,11 @@ const styles = StyleSheet.create({
   },
   controlBtnTimerActive: {
     backgroundColor: 'rgba(255,215,0,0.12)',
+  },
+  controlBtnSoundsActive: {
+    backgroundColor: 'rgba(126,200,227,0.18)',
+    borderColor:     Colors.softBlue,
+    borderWidth:     1,
   },
   controlBtnIcon:  { fontSize: 22 },
   controlBtnLabel: { fontFamily: Fonts.bold, fontSize: 11, color: Colors.textMuted },

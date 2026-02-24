@@ -29,7 +29,7 @@ import WarpStarField from '@/components/WarpStarField';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { generateText, generateImage } from '@fastshot/ai';
 import { getChildren, createStory, isSupabaseAvailable, upsertUserPreferences } from '@/lib/supabase';
-import { buildStoryPrompt, buildImagePrompt } from '@/lib/newell';
+import { buildStoryPrompt, buildImagePrompt, NARRATOR_PERSONALITIES, type NarratorPersonality } from '@/lib/newell';
 import type { Child } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,6 +180,7 @@ export default function CreateStoryScreen() {
   const [selectedTheme,  setSelectedTheme]  = useState<string | null>(null);
   const [isGenerating,   setIsGenerating]   = useState(false);
   const [generationStep, setGenerationStep] = useState<string>('');
+  const [narratorPersonality, setNarratorPersonality] = useState<NarratorPersonality | null>(null);
 
   // Entrance animations
   const headerOpacity  = useSharedValue(0);
@@ -196,15 +197,27 @@ export default function CreateStoryScreen() {
         const { children } = await getChildren(user.id);
         if (children && children.length > 0) {
           setChild(children[0]);
-          return;
         }
       }
-      const local = await AsyncStorage.getItem('pending_child_profile');
-      if (local) setChild(JSON.parse(local) as Child);
+      if (!child) {
+        const local = await AsyncStorage.getItem('pending_child_profile');
+        if (local) setChild(JSON.parse(local) as Child);
+      }
     } catch {
       const local = await AsyncStorage.getItem('pending_child_profile');
       if (local) setChild(JSON.parse(local) as Child);
     }
+    // Load selected narrator personality
+    try {
+      const narratorId = await AsyncStorage.getItem('selected_narrator_id');
+      if (narratorId) {
+        const narrator = NARRATOR_PERSONALITIES.find((n) => n.id === narratorId);
+        setNarratorPersonality(narrator ?? null);
+      }
+    } catch {
+      // non-fatal
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useEffect(() => {
@@ -275,6 +288,7 @@ export default function CreateStoryScreen() {
         voiceType: 'mom',
         theme:     themeObj?.label,
         mood:      selectedTheme === 'calming' ? 'very soothing and sleep-inducing' : undefined,
+        narratorPersonality: narratorPersonality ?? undefined,
       });
 
       const rawText = await generateText({ prompt: storyPrompt });

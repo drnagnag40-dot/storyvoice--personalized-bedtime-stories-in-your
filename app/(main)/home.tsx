@@ -31,6 +31,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
 import ParentalGate from '@/components/ParentalGate';
 import MagicSyncModal, { type MagicSyncState } from '@/components/MagicSyncModal';
+import NarratorGallery from '@/components/NarratorGallery';
+import CollectionModal from '@/components/CollectionModal';
+import StarsPaywall from '@/components/StarsPaywall';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import {
   toggleStoryFavorite,
@@ -228,6 +231,10 @@ export default function HomeScreen() {
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [, setIsLoading]                   = useState(true);
   const [activeTab,      setActiveTab]      = useState<BookshelfTab>('all');
+
+  // Phase 4: Collections & Paywall
+  const [showCollections, setShowCollections] = useState(false);
+  const [showPaywall,     setShowPaywall]     = useState(false);
 
   // ── Bookshelf tab content opacity (animated crossfade)
   const tabContentOpacity = useSharedValue(1);
@@ -447,6 +454,21 @@ export default function HomeScreen() {
     router.push('/(main)/player');
   }, [child?.name, router]);
 
+  // ── Play Series ────────────────────────────────────────────────────────────────
+  const handlePlaySeries = useCallback(async (storyIds: string[]) => {
+    if (storyIds.length === 0) return;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    // Store the full series queue
+    await AsyncStorage.setItem('series_queue', JSON.stringify(storyIds));
+
+    // Navigate to the first story
+    const firstStory = stories.find((s) => s.id === storyIds[0]);
+    if (firstStory) {
+      await openStory(firstStory);
+    }
+  }, [stories, openStory]);
+
   // ── Voice switching ────────────────────────────────────────────────────────────
   const handleSelectVoice = useCallback(async (voice: ParentVoice) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -517,14 +539,30 @@ export default function HomeScreen() {
               {user?.email?.split('@')[0] ?? 'Storyteller'}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() =>
-              requireParentalGate('Settings', () => router.push('/(main)/settings'))
-            }
-          >
-            <Text style={styles.settingsIcon}>⚙️</Text>
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            {/* Pro / Unlock button */}
+            <TouchableOpacity
+              style={styles.proButton}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setShowPaywall(true);
+              }}
+            >
+              <LinearGradient
+                colors={['rgba(255,215,0,0.25)', 'rgba(255,215,0,0.1)']}
+                style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+              />
+              <Text style={styles.proButtonText}>👑 Pro</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={() =>
+                requireParentalGate('Settings', () => router.push('/(main)/settings'))
+              }
+            >
+              <Text style={styles.settingsIcon}>⚙️</Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
 
         <Animated.View style={contentStyle}>
@@ -666,6 +704,46 @@ export default function HomeScreen() {
             </View>
           )}
 
+          {/* ── Collections Section ─────────────────────────────────────────── */}
+          <View style={styles.collectionsSection}>
+            <View style={styles.collectionsSectionHeader}>
+              <Text style={styles.sectionTitle}>🗂️ Collections</Text>
+              <TouchableOpacity
+                style={styles.manageBtn}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowCollections(true);
+                }}
+              >
+                <Text style={styles.manageBtnText}>Manage ›</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.collectionsCard}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowCollections(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['rgba(74,56,128,0.5)', 'rgba(37,38,85,0.3)']}
+                style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+              />
+              <Text style={styles.collectionsCardEmoji}>📚</Text>
+              <View style={styles.collectionsCardText}>
+                <Text style={styles.collectionsCardTitle}>Create a Series</Text>
+                <Text style={styles.collectionsCardSubtitle}>
+                  Group 2–3 stories for a continuous bedtime routine
+                </Text>
+              </View>
+              <Text style={styles.collectionsCardArrow}>›</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Narrator Gallery (Bedtime Buddies) ───────────────────────────── */}
+          <NarratorGallery childName={child?.name} />
+
           {/* Quick actions */}
           <View style={styles.quickActions}>
             <TouchableOpacity
@@ -721,6 +799,24 @@ export default function HomeScreen() {
           onDismiss={handleMigrationDismiss}
         />
       )}
+
+      {/* ── Collections Modal ──────────────────────────────────────────────── */}
+      <CollectionModal
+        visible={showCollections}
+        onClose={() => setShowCollections(false)}
+        allStories={stories.filter((s) => Boolean(s.content))}
+        onPlaySeries={(ids) => void handlePlaySeries(ids)}
+      />
+
+      {/* ── Stars Paywall ────────────────────────────────────────────────── */}
+      <StarsPaywall
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onSuccess={() => {
+          setShowPaywall(false);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
 
       {/* ── Voice Selector Modal ───────────────────────────────────────────────── */}
       <Modal
@@ -834,6 +930,16 @@ const styles = StyleSheet.create({
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.xl },
   greeting:     { fontFamily: Fonts.regular, fontSize: 14, color: Colors.textMuted },
   userName:     { fontFamily: Fonts.extraBold, fontSize: 22, color: Colors.moonlightCream },
+  headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  proButton: {
+    paddingHorizontal: 12,
+    paddingVertical:   8,
+    borderRadius:      Radius.full,
+    borderWidth:       1,
+    borderColor:       'rgba(255,215,0,0.4)',
+    overflow:          'hidden',
+  },
+  proButtonText: { fontFamily: Fonts.extraBold, fontSize: 12, color: Colors.celestialGold },
   settingsButton: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: Colors.cardBg,
@@ -841,6 +947,30 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.borderColor,
   },
   settingsIcon: { fontSize: 20 },
+
+  // Collections section
+  collectionsSection: { marginBottom: Spacing.xl },
+  collectionsSectionHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  manageBtn: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.borderColor,
+  },
+  manageBtnText: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.textMuted },
+  collectionsCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.cardBg,
+    borderRadius: Radius.xl, padding: Spacing.md,
+    borderWidth: 1, borderColor: Colors.borderColor,
+    overflow: 'hidden', gap: 12,
+  },
+  collectionsCardEmoji: { fontSize: 28 },
+  collectionsCardText:  { flex: 1 },
+  collectionsCardTitle: { fontFamily: Fonts.extraBold, fontSize: 15, color: Colors.moonlightCream },
+  collectionsCardSubtitle: { fontFamily: Fonts.regular, fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  collectionsCardArrow: { fontSize: 22, color: Colors.textMuted, fontFamily: Fonts.bold },
 
   // Child card
   childCard: {
