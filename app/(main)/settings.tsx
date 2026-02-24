@@ -36,6 +36,10 @@ import {
   clearSyncCache,
   type SyncState,
 } from '@/lib/syncService';
+import {
+  isMigrationComplete,
+  getMigrationTimestamp,
+} from '@/lib/migrationService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SettingRow {
@@ -139,11 +143,13 @@ function SyncStatusCard({
   isSyncing,
   onSyncNow,
   delay,
+  migrationComplete,
 }: {
   syncState: SyncState;
   isSyncing: boolean;
   onSyncNow: () => void;
   delay: number;
+  migrationComplete: boolean;
 }) {
   const cardOpacity = useSharedValue(0);
   const cardTransY  = useSharedValue(16);
@@ -196,11 +202,13 @@ function SyncStatusCard({
 
   const statusText = isSyncing
     ? 'Syncing to cloud…'
-    : syncState.status === 'success'
-      ? 'Cloud backup up to date'
-      : syncState.status === 'error'
-        ? 'Last sync had issues'
-        : 'Not yet synced';
+    : migrationComplete && syncState.status === 'success'
+      ? '✦ All legacy data protected in the cloud'
+      : syncState.status === 'success'
+        ? 'Cloud backup up to date'
+        : syncState.status === 'error'
+          ? 'Last sync had issues'
+          : 'Not yet synced';
 
   return (
     <Animated.View style={[styles.syncCard, cardStyle]}>
@@ -256,6 +264,15 @@ function SyncStatusCard({
           </View>
         ))}
       </View>
+
+      {/* Legacy migration badge */}
+      {migrationComplete && (
+        <View style={styles.migrationBadge}>
+          <Text style={styles.migrationBadgeText}>
+            ✨ Magic Sync complete — legacy data safely moved to cloud
+          </Text>
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -273,7 +290,8 @@ export default function SettingsScreen() {
     lastSyncAt: null,
     lastSyncLabel: 'Never synced',
   });
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncing,          setIsSyncing]          = useState(false);
+  const [migrationComplete,  setMigrationComplete]  = useState(false);
 
   // Interval to refresh the sync label ("5m ago" → "6m ago")
   const labelRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -304,7 +322,8 @@ export default function SettingsScreen() {
     return () => {
       if (labelRefreshRef.current) clearInterval(labelRefreshRef.current);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const loadSettings = async () => {
     try {
@@ -314,6 +333,17 @@ export default function SettingsScreen() {
       ]);
       if (notifRaw !== null) setNotificationsEnabled(notifRaw === 'true');
       setSyncState(state);
+
+      // Check if migration was completed for this user
+      if (user?.id) {
+        const migrated = await isMigrationComplete(user.id);
+        setMigrationComplete(migrated);
+        // Also check for legacy timestamp key as backup
+        if (!migrated) {
+          const ts = await getMigrationTimestamp();
+          if (ts) setMigrationComplete(true);
+        }
+      }
     } catch {
       // ignore
     }
@@ -609,6 +639,7 @@ export default function SettingsScreen() {
             isSyncing={isSyncing}
             onSyncNow={() => void handleSyncNow()}
             delay={150}
+            migrationComplete={migrationComplete}
           />
         )}
 
@@ -620,7 +651,7 @@ export default function SettingsScreen() {
 
         {/* App version */}
         <Animated.View style={[versionStyle, styles.versionRow]}>
-          <Text style={styles.versionText}>StoryVoice · Phase 2 · v2.0</Text>
+          <Text style={styles.versionText}>StoryVoice · Phase 3 · v3.0</Text>
           <Text style={styles.versionSubText}>Made with 🌙 for sleepy little ones</Text>
         </Animated.View>
       </ScrollView>
@@ -829,6 +860,23 @@ const styles = StyleSheet.create({
   syncCoverageLabel: {
     fontFamily: Fonts.medium, fontSize: 10,
     color: Colors.textMuted, letterSpacing: 0.2,
+  },
+  migrationBadge: {
+    marginTop: 10,
+    backgroundColor: 'rgba(255,215,0,0.08)',
+    borderRadius: Radius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.2)',
+    alignItems: 'center',
+  },
+  migrationBadgeText: {
+    fontFamily: Fonts.medium,
+    fontSize: 11,
+    color: Colors.celestialGold,
+    textAlign: 'center',
+    letterSpacing: 0.1,
   },
 
   // Section

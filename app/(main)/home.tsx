@@ -23,10 +23,14 @@ import Animated, {
   withTiming,
   withDelay,
   withSpring,
+  Easing,
+  interpolate,
+  Extrapolation,
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
 import ParentalGate from '@/components/ParentalGate';
+import MagicSyncModal, { type MagicSyncState } from '@/components/MagicSyncModal';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import {
   toggleStoryFavorite,
@@ -35,6 +39,12 @@ import {
 } from '@/lib/supabase';
 import type { Child, ParentVoice, Story } from '@/lib/supabase';
 import { loadHybridData } from '@/lib/syncService';
+import {
+  detectLocalData,
+  migrateLocalDataToCloud,
+  type LocalDataSummary,
+  type MigrationResult,
+} from '@/lib/migrationService';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android') {
@@ -58,6 +68,8 @@ const THEME_COLORS: Record<string, string> = {
   educational: '#6BCB77',
 };
 
+type BookshelfTab = 'all' | 'favorites';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Story card for horizontal scroll
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,10 +88,15 @@ function StoryCard({
   const heartScale = useSharedValue(1);
 
   const handleFavorite = () => {
-    heartScale.value = withSpring(1.4, { damping: 4, stiffness: 300 }, () => {
+    heartScale.value = withSpring(1.5, { damping: 3, stiffness: 280 }, () => {
       heartScale.value = withSpring(1, { damping: 8, stiffness: 200 });
     });
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.notificationAsync(
+      story.is_favorite
+        ? Haptics.NotificationFeedbackType.Warning
+        : Haptics.NotificationFeedbackType.Success
+    );
     onToggleFavorite();
   };
 
@@ -124,6 +141,79 @@ function StoryCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Bookshelf tab switcher
+// ─────────────────────────────────────────────────────────────────────────────
+function TabSwitcher({
+  activeTab,
+  favCount,
+  onSwitch,
+}: {
+  activeTab: BookshelfTab;
+  favCount: number;
+  onSwitch: (tab: BookshelfTab) => void;
+}) {
+  const indicatorPos = useSharedValue(activeTab === 'all' ? 0 : 1);
+
+  useEffect(() => {
+    indicatorPos.value = withSpring(activeTab === 'all' ? 0 : 1, {
+      damping: 18,
+      stiffness: 260,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const tabW = (W - Spacing.lg * 2 - 6) / 2;
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(
+          indicatorPos.value,
+          [0, 1],
+          [3, tabW + 3],
+          Extrapolation.CLAMP
+        ),
+      },
+    ],
+  }));
+
+  const handlePress = (tab: BookshelfTab) => {
+    if (tab === activeTab) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onSwitch(tab);
+  };
+
+  return (
+    <View style={styles.tabBar}>
+      {/* Sliding indicator */}
+      <Animated.View style={[styles.tabIndicator, { width: tabW - 6 }, indicatorStyle]} />
+
+      {/* All Stories tab */}
+      <TouchableOpacity
+        style={[styles.tabButton, { width: tabW }]}
+        onPress={() => handlePress('all')}
+        activeOpacity={0.75}
+      >
+        <Text style={[styles.tabLabel, activeTab === 'all' && styles.tabLabelActive]}>
+          ✨ All Stories
+        </Text>
+      </TouchableOpacity>
+
+      {/* Favorites tab */}
+      <TouchableOpacity
+        style={[styles.tabButton, { width: tabW }]}
+        onPress={() => handlePress('favorites')}
+        activeOpacity={0.75}
+      >
+        <Text style={[styles.tabLabel, activeTab === 'favorites' && styles.tabLabelActive]}>
+          ❤️ Favourites{favCount > 0 ? ` (${favCount})` : ''}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
@@ -136,12 +226,23 @@ export default function HomeScreen() {
   const [stories,        setStories]        = useState<Story[]>([]);
   const [activeVoiceId,  setActiveVoiceId]  = useState<string | null>(null);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
-  const [, setIsLoading] = useState(true);
+  const [, setIsLoading]                   = useState(true);
+  const [activeTab,      setActiveTab]      = useState<BookshelfTab>('all');
+
+  // ── Bookshelf tab content opacity (animated crossfade)
+  const tabContentOpacity = useSharedValue(1);
 
   // Parental Gate
   const [showParentalGate, setShowParentalGate] = useState(false);
   const [gateContext,      setGateContext]       = useState<string | undefined>(undefined);
   const pendingActionRef = useRef<(() => void) | null>(null);
+
+  // ── Magic Sync (migration) state
+  const [magicSyncVisible,    setMagicSyncVisible]    = useState(false);
+  const [migrationSummary,    setMigrationSummary]    = useState<LocalDataSummary | null>(null);
+  const [migrationSyncState,  setMigrationSyncState]  = useState<MagicSyncState>('idle');
+  const [migrationResult,     setMigrationResult]     = useState<MigrationResult | null>(null);
+  const migrationCheckedRef = useRef(false);
 
   const requireParentalGate = useCallback((context: string, action: () => void) => {
     pendingActionRef.current = action;
@@ -170,44 +271,54 @@ export default function HomeScreen() {
   const headerOpacity  = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
 
-  // ── Derived data ────────────────────────────────────────────────────────────
+  // ── Derived data ─────────────────────────────────────────────────────────────
   const recentStories   = stories.slice(0, 10);
   const favoriteStories = stories.filter((s) => s.is_favorite);
 
-  // ── Data loading ─────────────────────────────────────────────────────────────
+  // ── Animated tab content ─────────────────────────────────────────────────────
+  const tabContentStyle = useAnimatedStyle(() => ({ opacity: tabContentOpacity.value }));
+
+  const switchTab = useCallback((tab: BookshelfTab) => {
+    LayoutAnimation.configureNext({
+      duration: 280,
+      create:  { type: 'easeInEaseOut', property: 'opacity' },
+      update:  { type: 'spring', springDamping: 0.75 },
+      delete:  { type: 'easeInEaseOut', property: 'opacity' },
+    });
+    // Crossfade content
+    tabContentOpacity.value = withTiming(0, { duration: 120, easing: Easing.out(Easing.quad) }, () => {
+      tabContentOpacity.value = withTiming(1, { duration: 200, easing: Easing.in(Easing.quad) });
+    });
+    setActiveTab(tab);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Data loading ──────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Load active voice ID from local storage first (immediate)
       const savedVoiceId = await AsyncStorage.getItem('active_voice_id');
       if (savedVoiceId) setActiveVoiceId(savedVoiceId);
 
-      // Use hybrid data loader: serves cache first, then refreshes from cloud
       const data = await loadHybridData(user?.id ?? null);
 
       if (data.children.length > 0) {
         setChild(data.children[0]);
       }
-
       if (data.voices.length > 0) {
         setVoices(data.voices);
-        // If no voice was set locally, auto-select the first one
         if (!savedVoiceId && data.voices[0]) {
           setActiveVoiceId(data.voices[0].id);
           await AsyncStorage.setItem('active_voice_id', data.voices[0].id);
         }
       }
-
       if (data.stories.length > 0) {
         setStories(data.stories);
       }
-
-      // Sync active_voice_id from preferences if available
       if (data.preferences?.active_voice_id) {
         setActiveVoiceId(data.preferences.active_voice_id);
       }
     } catch {
-      // Last-resort fallback: read directly from AsyncStorage
       try {
         const local = await AsyncStorage.getItem('pending_child_profile');
         if (local) setChild(JSON.parse(local) as Child);
@@ -224,6 +335,23 @@ export default function HomeScreen() {
     }
   }, [user?.id]);
 
+  // ── Migration check (runs once after user authenticates) ──────────────────
+  const checkForMigration = useCallback(async (uid: string) => {
+    if (migrationCheckedRef.current) return;
+    migrationCheckedRef.current = true;
+    if (!isSupabaseAvailable) return;
+    try {
+      const summary = await detectLocalData(uid);
+      if (summary.hasLocalData) {
+        setMigrationSummary(summary);
+        setMigrationSyncState('idle');
+        setMagicSyncVisible(true);
+      }
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
   useEffect(() => {
     void loadData();
     headerOpacity.value  = withTiming(1, { duration: 600 });
@@ -231,7 +359,15 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadData]);
 
-  // Animate layout when favorites section appears/disappears
+  // Run migration check once user is available
+  useEffect(() => {
+    if (user?.id) {
+      void checkForMigration(user.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Animate layout when favorites count changes
   useEffect(() => {
     const hasFavs = favoriteStories.length > 0;
     if (hasFavs !== prevHadFavoritesRef.current) {
@@ -245,17 +381,38 @@ export default function HomeScreen() {
     }
   }, [favoriteStories.length]);
 
-  // ── Toggle favourite ─────────────────────────────────────────────────────────
+  // ── Migration handlers ──────────────────────────────────────────────────────
+  const handleMigrationConfirm = useCallback(async () => {
+    if (!user?.id || !migrationSummary) return;
+    setMigrationSyncState('syncing');
+    try {
+      const result = await migrateLocalDataToCloud(user.id, migrationSummary);
+      setMigrationResult(result);
+      setMigrationSyncState(result.success || result.totalMigrated > 0 ? 'success' : 'error');
+      // Reload data with fresh cloud records
+      if (result.totalMigrated > 0) {
+        await loadData();
+      }
+    } catch {
+      setMigrationSyncState('error');
+    }
+  }, [user?.id, migrationSummary, loadData]);
+
+  const handleMigrationDismiss = useCallback(() => {
+    setMagicSyncVisible(false);
+    setMigrationSyncState('idle');
+    setMigrationResult(null);
+  }, []);
+
+  // ── Toggle favourite ──────────────────────────────────────────────────────────
   const handleToggleFavorite = useCallback(async (storyId: string) => {
     const updatedStories = stories.map((s) =>
       s.id === storyId ? { ...s, is_favorite: !s.is_favorite } : s
     );
     setStories(updatedStories);
 
-    // Persist locally
     await AsyncStorage.setItem('local_stories', JSON.stringify(updatedStories.slice(0, 20)));
 
-    // Update current_story if it's the same one
     const raw = await AsyncStorage.getItem('current_story');
     if (raw) {
       const current = JSON.parse(raw) as { id?: string };
@@ -265,18 +422,16 @@ export default function HomeScreen() {
       }
     }
 
-    // Sync to Supabase
     if (isSupabaseAvailable && user?.id) {
       const updated = updatedStories.find((s) => s.id === storyId);
       await toggleStoryFavorite(storyId, updated?.is_favorite ?? false);
     }
   }, [stories, user?.id]);
 
-  // ── Open a story on the player ───────────────────────────────────────────────
+  // ── Open a story on the player ────────────────────────────────────────────────
   const openStory = useCallback(async (story: Story) => {
-    if (!story.content) return; // still generating
+    if (!story.content) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Handle both Supabase format (image_url) and local cache format (imageUrl)
     const imageUrl = story.image_url ?? (story as unknown as { imageUrl?: string }).imageUrl ?? null;
     const createdAt = story.created_at ?? (story as unknown as { createdAt?: string }).createdAt ?? new Date().toISOString();
     await AsyncStorage.setItem('current_story', JSON.stringify({
@@ -292,7 +447,7 @@ export default function HomeScreen() {
     router.push('/(main)/player');
   }, [child?.name, router]);
 
-  // ── Voice switching ──────────────────────────────────────────────────────────
+  // ── Voice switching ────────────────────────────────────────────────────────────
   const handleSelectVoice = useCallback(async (voice: ParentVoice) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setActiveVoiceId(voice.id);
@@ -308,12 +463,11 @@ export default function HomeScreen() {
   const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
   const activeVoice  = voices.find((v) => v.id === activeVoiceId) ?? voices[0] ?? null;
 
-  // ── Render story list section ─────────────────────────────────────────────────
-  const renderStorySection = (title: string, data: Story[], emptyMsg?: string) => {
+  // ── Story section renderer ─────────────────────────────────────────────────────
+  const renderStoryList = (data: Story[], emptyMsg?: string) => {
     if (data.length === 0 && !emptyMsg) return null;
     return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <>
         {data.length === 0 ? (
           <View style={styles.emptyInline}>
             <Text style={styles.emptyInlineText}>{emptyMsg}</Text>
@@ -334,7 +488,7 @@ export default function HomeScreen() {
             )}
           />
         )}
-      </View>
+      </>
     );
   };
 
@@ -434,7 +588,7 @@ export default function HomeScreen() {
               style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
             />
             <View style={styles.activVoiceBannerLeft}>
-              <View style={[styles.activeVoiceDot]} />
+              <View style={styles.activeVoiceDot} />
               <View>
                 <Text style={styles.activeVoiceLabel}>Now Narrating</Text>
                 <Text style={styles.activeVoiceName}>
@@ -475,16 +629,41 @@ export default function HomeScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* My Favourites section – only when there are favourites */}
-          {favoriteStories.length > 0 &&
-            renderStorySection('❤️ My Favourites', favoriteStories)
-          }
+          {/* ── Bookshelf section with tab switcher ── */}
+          {stories.length > 0 && (
+            <View style={styles.bookshelfSection}>
+              <Text style={styles.sectionTitle}>📚 My Bookshelf</Text>
+              <TabSwitcher
+                activeTab={activeTab}
+                favCount={favoriteStories.length}
+                onSwitch={switchTab}
+              />
 
-          {/* Recently Played / All Stories section */}
-          {renderStorySection(
-            '✨ Recently Created',
-            recentStories,
-            stories.length === 0 ? 'No stories yet — tap above to create your first one!' : undefined
+              <Animated.View style={tabContentStyle}>
+                {activeTab === 'all'
+                  ? renderStoryList(recentStories)
+                  : favoriteStories.length > 0
+                    ? renderStoryList(favoriteStories)
+                    : (
+                      <View style={styles.emptyInline}>
+                        <Text style={styles.emptyInlineEmoji}>🤍</Text>
+                        <Text style={styles.emptyInlineText}>
+                          No favourites yet — tap the heart on any story to save it here.
+                        </Text>
+                      </View>
+                    )
+                }
+              </Animated.View>
+            </View>
+          )}
+
+          {/* Empty state when no stories at all */}
+          {stories.length === 0 && (
+            <View style={styles.emptyInline}>
+              <Text style={styles.emptyInlineText}>
+                No stories yet — tap above to create your first one! ✨
+              </Text>
+            </View>
           )}
 
           {/* Quick actions */}
@@ -523,7 +702,7 @@ export default function HomeScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* ── Parental Gate ────────────────────────────────────────────────────── */}
+      {/* ── Parental Gate ─────────────────────────────────────────────────────── */}
       <ParentalGate
         visible={showParentalGate}
         context={gateContext}
@@ -531,7 +710,19 @@ export default function HomeScreen() {
         onDismiss={handleGateDismiss}
       />
 
-      {/* ── Voice Selector Modal ─────────────────────────────────────────────── */}
+      {/* ── Magic Sync Modal ──────────────────────────────────────────────────── */}
+      {migrationSummary && (
+        <MagicSyncModal
+          visible={magicSyncVisible}
+          summary={migrationSummary}
+          syncState={migrationSyncState}
+          migrationResult={migrationResult}
+          onConfirm={() => void handleMigrationConfirm()}
+          onDismiss={handleMigrationDismiss}
+        />
+      )}
+
+      {/* ── Voice Selector Modal ───────────────────────────────────────────────── */}
       <Modal
         visible={showVoiceModal}
         transparent
@@ -606,7 +797,6 @@ export default function HomeScreen() {
                     );
                   })}
 
-                  {/* Add another voice */}
                   <TouchableOpacity
                     style={styles.addAnotherVoice}
                     onPress={() => {
@@ -737,9 +927,52 @@ const styles = StyleSheet.create({
   createStorySubLabel:  { fontFamily: Fonts.regular, fontSize: 12, color: 'rgba(13,14,36,0.65)', marginTop: 1 },
   createStoryArrow:     { fontSize: 26, color: Colors.deepSpace, fontFamily: Fonts.black },
 
-  // Section
-  section:      { marginBottom: Spacing.xl },
-  sectionTitle: { fontFamily: Fonts.extraBold, fontSize: 18, color: Colors.moonlightCream, marginBottom: 12 },
+  // Bookshelf section
+  bookshelfSection: { marginBottom: Spacing.xl },
+  sectionTitle:     { fontFamily: Fonts.extraBold, fontSize: 18, color: Colors.moonlightCream, marginBottom: 12 },
+
+  // Tab bar
+  tabBar: {
+    flexDirection:   'row',
+    backgroundColor: Colors.cardBg,
+    borderRadius:    Radius.full,
+    borderWidth:     1,
+    borderColor:     Colors.borderColor,
+    padding:         3,
+    marginBottom:    16,
+    position:        'relative',
+    height:          46,
+  },
+  tabIndicator: {
+    position:        'absolute',
+    top:             3,
+    bottom:          3,
+    borderRadius:    Radius.full,
+    backgroundColor: Colors.deepPurple,
+    borderWidth:     1,
+    borderColor:     'rgba(107,72,184,0.6)',
+    shadowColor:     Colors.softPurple,
+    shadowOffset:    { width: 0, height: 2 },
+    shadowOpacity:   0.4,
+    shadowRadius:    6,
+    elevation:       3,
+  },
+  tabButton: {
+    justifyContent: 'center',
+    alignItems:     'center',
+    borderRadius:   Radius.full,
+    height:         40,
+  },
+  tabLabel: {
+    fontFamily: Fonts.bold,
+    fontSize:   13,
+    color:      Colors.textMuted,
+  },
+  tabLabelActive: {
+    color: Colors.moonlightCream,
+  },
+
+  // Horizontal story list
   horizontalList: { paddingRight: Spacing.lg, gap: 12 },
 
   // Story card (horizontal)
@@ -777,11 +1010,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.borderColor,
+    gap: 8,
   },
-  emptyInlineText: { fontFamily: Fonts.medium, fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
+  emptyInlineEmoji: { fontSize: 28 },
+  emptyInlineText:  { fontFamily: Fonts.medium, fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
 
   // Quick actions
-  quickActions:        { flexDirection: 'row', gap: 12 },
+  quickActions:        { flexDirection: 'row', gap: 12, marginTop: Spacing.sm },
   quickAction:         { flex: 1, borderRadius: Radius.xl, overflow: 'hidden' },
   quickActionGradient: { paddingVertical: Spacing.lg, alignItems: 'center', gap: 8, borderRadius: Radius.xl },
   quickActionEmoji:    { fontSize: 28 },

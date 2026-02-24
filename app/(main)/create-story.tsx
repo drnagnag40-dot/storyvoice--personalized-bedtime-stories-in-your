@@ -106,6 +106,16 @@ function ThemeCard({
 
   const handlePressIn  = () => { scale.value = withTiming(0.95, { duration: 100 }); };
   const handlePressOut = () => { scale.value = withTiming(1,    { duration: 150 }); };
+  const handlePressWithHaptic = () => {
+    // Selection haptic: Success when newly selecting, light when re-tapping
+    if (!isSelected) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    onPress();
+  };
 
   const cardStyle  = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const glowStyle  = useAnimatedStyle(() => ({ opacity: glowOpacity.value }));
@@ -124,7 +134,7 @@ function ThemeCard({
 
       <TouchableOpacity
         activeOpacity={0.85}
-        onPress={onPress}
+        onPress={handlePressWithHaptic}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={disabled}
@@ -274,6 +284,7 @@ export default function CreateStoryScreen() {
       const storyText = rawText.trim();
 
       setGenerationStep('Weaving the magic words…');
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       // ── Step 2: Generate cover illustration via Newell AI ───────────
       const imagePrompt = buildImagePrompt(child, storyTitle);
@@ -292,6 +303,7 @@ export default function CreateStoryScreen() {
       }
 
       setGenerationStep('Almost ready…');
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       // ── Step 3: Save to Supabase ─────────────────────────────────────
       let savedStoryId: string | null = null;
@@ -345,6 +357,14 @@ export default function CreateStoryScreen() {
       // ── Step 5: Navigate to the immersive player ─────────────────────
       setIsGenerating(false);
       setGenerationStep('');
+      // Celebratory haptic cascade on story completion
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }, 120);
+      setTimeout(() => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }, 240);
       router.push('/(main)/player');
 
     } catch (err) {
