@@ -202,3 +202,65 @@ export async function getParentVoices(userId: string) {
     .order('created_at', { ascending: true });
   return { voices: data as ParentVoice[] | null, error };
 }
+
+// ──────────────────────────────────────────────────────────
+// Stories
+// SQL migration (apply once in Supabase dashboard or via MCP):
+//
+// CREATE TABLE stories (
+//   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+//   user_id     UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+//   child_id    UUID        NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+//   title       TEXT        NOT NULL,
+//   content     TEXT,
+//   image_url   TEXT,
+//   theme       TEXT,
+//   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+// );
+// ALTER TABLE stories ENABLE ROW LEVEL SECURITY;
+// CREATE POLICY "Users manage own stories" ON stories
+//   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+// ──────────────────────────────────────────────────────────
+
+export interface Story {
+  id: string;
+  user_id: string;
+  child_id: string;
+  title: string;
+  content: string | null;
+  image_url: string | null;
+  theme: string | null;
+  created_at: string;
+}
+
+export async function createStory(data: Omit<Story, 'id' | 'created_at'>) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] createStory skipped – Supabase not configured.');
+    return { story: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { data: story, error } = await supabase
+    .from('stories')
+    .insert(data)
+    .select()
+    .single();
+  return { story: story as Story | null, error };
+}
+
+export async function getStories(userId: string, childId?: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] getStories skipped – Supabase not configured.');
+    return { stories: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  let query = supabase
+    .from('stories')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (childId) {
+    query = query.eq('child_id', childId);
+  }
+
+  const { data, error } = await query;
+  return { stories: data as Story[] | null, error };
+}

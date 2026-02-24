@@ -20,29 +20,24 @@ import Animated, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
-import { getChildren, getParentVoices } from '@/lib/supabase';
-import type { Child, ParentVoice } from '@/lib/supabase';
+import { getChildren, getParentVoices, getStories } from '@/lib/supabase';
+import type { Child, ParentVoice, Story } from '@/lib/supabase';
 
-interface StoryCardPlaceholder {
-  id: string;
-  title: string;
-  emoji: string;
-  isGenerating?: boolean;
-}
-
-const PLACEHOLDER_STORIES: StoryCardPlaceholder[] = [
-  { id: '1', title: 'The Moonlit Adventure', emoji: '🌙', isGenerating: true },
-  { id: '2', title: 'The Dragon of Dreams', emoji: '🐉', isGenerating: true },
-  { id: '3', title: 'Stars and Starfish', emoji: '⭐', isGenerating: true },
-];
+const THEME_EMOJI: Record<string, string> = {
+  adventurous: '🗺️',
+  calming:     '🌙',
+  funny:       '😄',
+  educational: '📚',
+};
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
 
-  const [child, setChild] = useState<Child | null>(null);
-  const [voices, setVoices] = useState<ParentVoice[]>([]);
+  const [child,   setChild]   = useState<Child | null>(null);
+  const [voices,  setVoices]  = useState<ParentVoice[]>([]);
+  const [stories, setStories] = useState<Story[]>([]);
   const [, setIsLoading] = useState(true);
 
   // Entrance animations
@@ -69,6 +64,10 @@ export default function HomeScreen() {
         }
         const { voices: v } = await getParentVoices(user.id);
         if (v) setVoices(v);
+
+        const firstChildId = children?.[0]?.id;
+        const { stories: s } = await getStories(user.id, firstChildId);
+        if (s) setStories(s);
       }
     } catch {
       // Use local data
@@ -101,8 +100,6 @@ export default function HomeScreen() {
 
   const headerStyle = useAnimatedStyle(() => ({ opacity: headerOpacity.value }));
   const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
-
-  const completedVoices = voices.filter((v) => v.is_complete);
 
   return (
     <View style={styles.container}>
@@ -215,44 +212,65 @@ export default function HomeScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{"Tonight's Stories ✨"}</Text>
-              <View style={styles.comingSoonBadge}>
-                <Text style={styles.comingSoonText}>AI Generating…</Text>
-              </View>
             </View>
-            <View style={styles.storiesGrid}>
-              {PLACEHOLDER_STORIES.map((story, idx) => (
-                <View
-                  key={story.id}
-                  style={[styles.storyCard, idx === 0 && styles.storyCardLarge]}
-                >
-                  <LinearGradient
-                    colors={[
-                      idx === 0 ? 'rgba(255,215,0,0.15)' : 'rgba(107,72,184,0.2)',
-                      'rgba(37,38,85,0.6)',
-                    ]}
-                    style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
-                  />
-                  <Text style={styles.storyCardEmoji}>{story.emoji}</Text>
-                  <Text style={styles.storyCardTitle}>{story.title}</Text>
-                  <View style={styles.generatingRow}>
-                    <View style={styles.generatingDot} />
-                    <Text style={styles.generatingText}>AI crafting…</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
 
-          {/* AI info banner */}
-          <View style={styles.aiBanner}>
-            <Text style={styles.aiBannerEmoji}>🤖</Text>
-            <View style={styles.aiBannerContent}>
-              <Text style={styles.aiBannerTitle}>Stories are being crafted</Text>
-              <Text style={styles.aiBannerText}>
-                Our AI is personalising stories for {child?.name ?? 'your child'} based on their interests.
-                {voices.length > 0 ? " They'll be read in the voice you recorded." : ' Add a voice recording to hear them.'}
-              </Text>
-            </View>
+            {/* Create New Story – primary CTA */}
+            <TouchableOpacity
+              style={styles.createStoryButton}
+              onPress={() => router.push('/(main)/create-story')}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={[Colors.celestialGold, Colors.softGold, '#FFA500']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.createStoryGradient}
+              >
+                <Text style={styles.createStoryIcon}>🪄</Text>
+                <View style={styles.createStoryTextGroup}>
+                  <Text style={styles.createStoryLabel}>Create New Story</Text>
+                  <Text style={styles.createStorySubLabel}>
+                    Personalised for {child?.name ?? 'your child'}
+                  </Text>
+                </View>
+                <Text style={styles.createStoryArrow}>›</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Saved stories list */}
+            {stories.length > 0 ? (
+              <View style={[styles.storiesGrid, { marginTop: 12 }]}>
+                {stories.slice(0, 4).map((story) => {
+                  const themeKey = story.theme?.toLowerCase() ?? '';
+                  const emoji = THEME_EMOJI[themeKey] ?? '📖';
+                  return (
+                    <View key={story.id} style={styles.storyCard}>
+                      <LinearGradient
+                        colors={['rgba(107,72,184,0.2)', 'rgba(37,38,85,0.6)']}
+                        style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+                      />
+                      <Text style={styles.storyCardEmoji}>{emoji}</Text>
+                      <Text style={styles.storyCardTitle} numberOfLines={2}>
+                        {story.title}
+                      </Text>
+                      {story.content == null && (
+                        <View style={styles.generatingRow}>
+                          <View style={styles.generatingDot} />
+                          <Text style={styles.generatingText}>Generating…</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.emptyStoriesCard}>
+                <Text style={styles.emptyStoriesEmoji}>🌙</Text>
+                <Text style={styles.emptyStoriesText}>
+                  No stories yet — tap above to create your first one!
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Quick actions */}
@@ -341,16 +359,6 @@ const styles = StyleSheet.create({
   section: { marginBottom: Spacing.xl },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   sectionTitle: { fontFamily: Fonts.extraBold, fontSize: 18, color: Colors.moonlightCream, marginBottom: 12 },
-  comingSoonBadge: {
-    backgroundColor: 'rgba(107,72,184,0.3)',
-    borderRadius: Radius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: Colors.softPurple,
-    marginBottom: 12,
-  },
-  comingSoonText: { fontFamily: Fonts.bold, fontSize: 11, color: Colors.celestialGold },
   addVoiceCard: {
     backgroundColor: Colors.cardBg,
     borderRadius: Radius.xl,
@@ -389,6 +397,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addVoiceChipText: { fontFamily: Fonts.bold, fontSize: 13, color: Colors.textMuted },
+  // Create Story CTA
+  createStoryButton: {
+    borderRadius: Radius.full,
+    overflow: 'hidden',
+    shadowColor: Colors.celestialGold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 14,
+    shadowOpacity: 0.35,
+    elevation: 8,
+  },
+  createStoryGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Radius.full,
+    gap: 12,
+  },
+  createStoryIcon: { fontSize: 26 },
+  createStoryTextGroup: { flex: 1 },
+  createStoryLabel: { fontFamily: Fonts.extraBold, fontSize: 17, color: Colors.deepSpace },
+  createStorySubLabel: { fontFamily: Fonts.regular, fontSize: 12, color: 'rgba(13,14,36,0.65)', marginTop: 1 },
+  createStoryArrow: { fontSize: 26, color: Colors.deepSpace, fontFamily: Fonts.black },
+
+  // Stories list
   storiesGrid: { gap: 12 },
   storyCard: {
     backgroundColor: Colors.cardBg,
@@ -401,27 +434,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  storyCardLarge: { padding: Spacing.xl },
   storyCardEmoji: { fontSize: 32 },
   storyCardTitle: { fontFamily: Fonts.bold, fontSize: 15, color: Colors.moonlightCream, flex: 1 },
   generatingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   generatingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.celestialGold },
   generatingText: { fontFamily: Fonts.regular, fontSize: 12, color: Colors.textMuted },
-  aiBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(107,72,184,0.2)',
+
+  // Empty state
+  emptyStoriesCard: {
+    backgroundColor: Colors.cardBg,
     borderRadius: Radius.xl,
-    padding: Spacing.lg,
-    gap: 14,
-    marginBottom: Spacing.xl,
+    padding: Spacing.xl,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.softPurple,
+    borderColor: Colors.borderColor,
+    marginTop: 12,
+    gap: 10,
   },
-  aiBannerEmoji: { fontSize: 28, marginTop: 2 },
-  aiBannerContent: { flex: 1 },
-  aiBannerTitle: { fontFamily: Fonts.extraBold, fontSize: 15, color: Colors.moonlightCream, marginBottom: 6 },
-  aiBannerText: { fontFamily: Fonts.regular, fontSize: 13, color: Colors.textMuted, lineHeight: 18 },
+  emptyStoriesEmoji: { fontSize: 40 },
+  emptyStoriesText: { fontFamily: Fonts.medium, fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
   quickActions: { flexDirection: 'row', gap: 12 },
   quickAction: { flex: 1, borderRadius: Radius.xl, overflow: 'hidden' },
   quickActionGradient: { paddingVertical: Spacing.lg, alignItems: 'center', gap: 8, borderRadius: Radius.xl },
