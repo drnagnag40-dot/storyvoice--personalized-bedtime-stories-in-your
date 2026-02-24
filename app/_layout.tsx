@@ -47,6 +47,8 @@ export default function RootLayout() {
       >
         <StatusBar style="light" backgroundColor={Colors.midnightNavy} />
         <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="walkthrough" options={{ animation: 'fade', gestureEnabled: false }} />
           <Stack.Screen name="welcome" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(onboarding)" />

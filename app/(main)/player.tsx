@@ -42,6 +42,7 @@ import Animated, {
   Easing,
   cancelAnimation,
   interpolate,
+  Extrapolation,
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
@@ -116,6 +117,10 @@ export default function PlayerScreen() {
   // Heart animation
   const heartScale = useSharedValue(1);
 
+  // Breathing glow for the primary "New Story" button
+  // 4-second calming cycle: 2s inhale → 2s exhale
+  const breathGlow = useSharedValue(0);
+
   // Sleep timer state
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState(0);
   const [sleepSecondsLeft,  setSleepSecondsLeft]  = useState(0);
@@ -169,7 +174,22 @@ export default function PlayerScreen() {
       coverScale.value     = withDelay(200, withTiming(1, { duration: 700, easing: Easing.out(Easing.back(1.2)) }));
       contentOpacity.value = withDelay(400, withTiming(1, { duration: 600 }));
       controlsY.value      = withDelay(500, withTiming(0, { duration: 500, easing: Easing.out(Easing.quad) }));
+
+      // Start breathing glow on the New Story button after controls appear
+      // Calming 4-second cycle (2s in / 2s out) — mirrors a restful breathing tempo
+      breathGlow.value = withDelay(
+        900,
+        withRepeat(
+          withSequence(
+            withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
+            withTiming(0, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
+          ),
+          -1,
+          false,
+        ),
+      );
     }
+    return () => cancelAnimation(breathGlow);
     // Reanimated shared values are stable refs – safe to omit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, story]);
@@ -311,6 +331,18 @@ export default function PlayerScreen() {
     opacity:   interpolate(controlsY.value, [40, 0], [0, 1]),
     transform: [{ translateY: controlsY.value }],
   }));
+
+  // Breathing glow style for primary CTA button
+  const breathGlowStyle = useAnimatedStyle(() => {
+    const glowRadius  = interpolate(breathGlow.value, [0, 1], [8, 22], Extrapolation.CLAMP);
+    const glowOpacity = interpolate(breathGlow.value, [0, 1], [0.25, 0.65], Extrapolation.CLAMP);
+    const scale       = interpolate(breathGlow.value, [0, 1], [1, 1.03], Extrapolation.CLAMP);
+    return {
+      shadowRadius:  glowRadius,
+      shadowOpacity: glowOpacity,
+      transform:     [{ scale }],
+    };
+  });
 
   const themeGradient = THEME_GRADIENT[story?.theme ?? ''] ?? [Colors.softPurple, Colors.deepPurple];
 
@@ -518,23 +550,32 @@ export default function PlayerScreen() {
             <Text style={styles.controlBtnLabel}>Home</Text>
           </TouchableOpacity>
 
-          {/* Create new story */}
-          <TouchableOpacity
-            style={[styles.controlBtnPrimary]}
-            onPress={() => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.replace('/(main)/create-story');
-            }}
+          {/* Create new story — with calming breathing glow */}
+          <Animated.View
+            style={[
+              styles.controlBtnPrimary,
+              breathGlowStyle,
+              { shadowColor: Colors.celestialGold },
+            ]}
           >
-            <LinearGradient
-              colors={[Colors.celestialGold, Colors.softGold]}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={styles.controlBtnPrimaryGradient}
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.replace('/(main)/create-story');
+              }}
+              activeOpacity={0.88}
             >
-              <Text style={styles.controlBtnPrimaryIcon}>🪄</Text>
-              <Text style={styles.controlBtnPrimaryLabel}>New Story</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={[Colors.celestialGold, Colors.softGold]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={styles.controlBtnPrimaryGradient}
+              >
+                <Text style={styles.controlBtnPrimaryIcon}>🪄</Text>
+                <Text style={styles.controlBtnPrimaryLabel}>New Story</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
 
           {/* Sleep timer toggle */}
           <TouchableOpacity

@@ -39,15 +39,22 @@ export function buildStoryPrompt(input: StoryGenerationInput): string {
   const ageText = child.age ? `${child.age}-year-old` : 'young';
 
   return `
-Write a warm, soothing 5-paragraph bedtime story for a ${ageText} child named ${child.name}.
+Write a warm, deeply soothing 5-paragraph bedtime story for a ${ageText} child named ${child.name}.
 ${interests}
 ${lifeNotes}
 ${theme ? `Story theme: ${theme}.` : ''}
-${mood ? `Story mood: ${mood}.` : 'The story should be calming and end with the child falling happily asleep.'}
+${mood ? `Story mood: ${mood}.` : 'The story should be progressively calming, with each paragraph gentler and quieter than the last.'}
 
-Format the story in exactly 5 short paragraphs, each 2-3 sentences.
-Use simple, vivid language appropriate for a child.
-End with the child character drifting off to sleep in a cozy, safe place.
+STRUCTURE:
+- Paragraphs 1–3: A gentle adventure or exploration, written in soft, unhurried language. Each sentence should feel like a slow exhale.
+- Paragraph 4: The world around the characters grows very quiet and still. Sounds fade. The pace slows to almost nothing. Use short, rhythmic sentences that mirror a child's breathing slowing down.
+- Paragraph 5 (THE SLEEPY ENDING): This paragraph must be a gentle, rhythmic wind-down. Describe the main character's eyes growing heavy, their breathing slowing to a calm and steady rhythm. Use poetic, repetitive phrasing — soft pillows, warm blankets, the hush of night, fading starlight. The character should drift peacefully to sleep, carried away on a cloud of dreams, as the story whispers to a close. End with one final, tender sentence — very short, very quiet — like a lullaby's last note.
+
+RULES:
+- Exactly 5 paragraphs, each 2–4 sentences.
+- Use simple, dreamy language a child can easily follow.
+- No conflict, no peril, no exciting twists in paragraphs 4–5.
+- The overall rhythm should slow progressively like a song fading out.
 `.trim();
 }
 

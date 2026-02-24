@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
+import ParentalGate from '@/components/ParentalGate';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import {
   getChildren,
@@ -139,6 +140,31 @@ export default function HomeScreen() {
   const [activeVoiceId,  setActiveVoiceId]  = useState<string | null>(null);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [, setIsLoading] = useState(true);
+
+  // Parental Gate
+  const [showParentalGate, setShowParentalGate] = useState(false);
+  const [gateContext,      setGateContext]       = useState<string | undefined>(undefined);
+  const pendingActionRef = useRef<(() => void) | null>(null);
+
+  const requireParentalGate = useCallback((context: string, action: () => void) => {
+    pendingActionRef.current = action;
+    setGateContext(context);
+    setShowParentalGate(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  const handleGateSuccess = useCallback(() => {
+    setShowParentalGate(false);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const action = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (action) action();
+  }, []);
+
+  const handleGateDismiss = useCallback(() => {
+    setShowParentalGate(false);
+    pendingActionRef.current = null;
+  }, []);
 
   // track whether favorites section was visible last render
   const prevHadFavoritesRef = useRef(false);
@@ -360,7 +386,10 @@ export default function HomeScreen() {
               {user?.email?.split('@')[0] ?? 'Storyteller'}
             </Text>
           </View>
-          <TouchableOpacity style={styles.settingsButton} onPress={handleSignOut}>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => requireParentalGate('Settings', handleSignOut)}
+          >
             <Text style={styles.settingsIcon}>⚙️</Text>
           </TouchableOpacity>
         </Animated.View>
@@ -387,7 +416,11 @@ export default function HomeScreen() {
                 </View>
                 <TouchableOpacity
                   style={styles.editChildButton}
-                  onPress={() => router.push('/(onboarding)/child-profile')}
+                  onPress={() =>
+                    requireParentalGate('Edit Profile', () =>
+                      router.push('/(onboarding)/child-profile'),
+                    )
+                  }
                 >
                   <Text style={styles.editChildText}>Edit</Text>
                 </TouchableOpacity>
@@ -510,6 +543,14 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
       </ScrollView>
+
+      {/* ── Parental Gate ────────────────────────────────────────────────────── */}
+      <ParentalGate
+        visible={showParentalGate}
+        context={gateContext}
+        onSuccess={handleGateSuccess}
+        onDismiss={handleGateDismiss}
+      />
 
       {/* ── Voice Selector Modal ─────────────────────────────────────────────── */}
       <Modal
