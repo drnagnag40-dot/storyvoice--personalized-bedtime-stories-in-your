@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -26,8 +26,9 @@ import Animated, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import WarpStarField from '@/components/WarpStarField';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
-import { getChildren, createStory, isSupabaseAvailable } from '@/lib/supabase';
-import { buildStoryPrompt } from '@/lib/newell';
+import { generateText, generateImage } from '@fastshot/ai';
+import { getChildren, createStory, updateStory, isSupabaseAvailable } from '@/lib/supabase';
+import { buildStoryPrompt, buildImagePrompt } from '@/lib/newell';
 import type { Child } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,8 +165,6 @@ export default function CreateStoryScreen() {
   const [isGenerating,   setIsGenerating]   = useState(false);
   const [generationStep, setGenerationStep] = useState<string>('');
 
-  const generationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Entrance animations
   const headerOpacity  = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
@@ -181,7 +180,7 @@ export default function CreateStoryScreen() {
     contentOpacity.value = withDelay(300, withTiming(1, { duration: 700 }));
 
     return () => {
-      if (generationTimerRef.current) clearTimeout(generationTimerRef.current);
+      // cleanup
     };
   }, []);
 
@@ -235,8 +234,13 @@ export default function CreateStoryScreen() {
       Alert.alert('Choose a Theme', 'Please pick a story theme before generating.');
       return;
     }
+    if (!child) {
+      Alert.alert('Child Profile Missing', 'Please set up a child profile first.');
+      return;
+    }
 
     const themeObj = STORY_THEMES.find((t) => t.id === selectedTheme);
+    const storyTitle = `A ${themeObj?.label ?? 'Magical'} Story for ${child.name}`;
 
     // Button press bounce
     buttonScale.value = withSequence(
@@ -247,74 +251,84 @@ export default function CreateStoryScreen() {
     setIsGenerating(true);
     setGenerationStep('Gathering the stardust…');
 
-    // Build prompt payload (used in next step when Newell AI is wired)
-    const prompt = child
-      ? buildStoryPrompt({
-          child,
-          voiceType: 'mom',
-          theme: themeObj?.label,
-          mood: selectedTheme === 'calming' ? 'very soothing and sleep-inducing' : undefined,
-        })
-      : '';
+    try {
+      // ── Step 1: Generate story text via Newell AI ───────────────────
+      const storyPrompt = buildStoryPrompt({
+        child,
+        voiceType: 'mom',
+        theme:     themeObj?.label,
+        mood:      selectedTheme === 'calming' ? 'very soothing and sleep-inducing' : undefined,
+      });
 
-    // Store payload for the next step
-    await AsyncStorage.setItem(
-      'pending_story_payload',
-      JSON.stringify({
-        childId:   child?.id ?? null,
-        childName: child?.name ?? 'your child',
-        theme:     themeObj?.label ?? selectedTheme,
-        prompt,
-        createdAt: new Date().toISOString(),
-      })
-    );
+      const storyText = await generateText({ prompt: storyPrompt });
 
-    // Step-through generation messages
-    const steps = [
-      'Gathering the stardust…',
-      'Weaving the magic words…',
-      'Painting the dreamscape…',
-      'Almost ready…',
-    ];
+      setGenerationStep('Weaving the magic words…');
 
-    let stepIdx = 0;
-    const advance = () => {
-      stepIdx++;
-      if (stepIdx < steps.length) {
-        setGenerationStep(steps[stepIdx]);
-        generationTimerRef.current = setTimeout(advance, 1100);
-      }
-    };
+      // ── Step 2: Generate cover illustration via Newell AI ───────────
+      const imagePrompt = buildImagePrompt(child, storyTitle);
+      let imageUrl: string | null = null;
 
-    setGenerationStep(steps[0]);
-    generationTimerRef.current = setTimeout(advance, 1100);
-
-    // Simulate AI generation time, then save placeholder story & navigate
-    generationTimerRef.current = setTimeout(async () => {
       try {
-        // Save placeholder story metadata to Supabase (content filled in next step)
-        if (user?.id && child?.id && isSupabaseAvailable) {
-          await createStory({
+        setGenerationStep('Painting the dreamscape…');
+        const imageResult = await generateImage({
+          prompt: imagePrompt,
+          width:  1024,
+          height: 1024,
+        });
+        imageUrl = imageResult?.images?.[0] ?? null;
+      } catch (imgErr) {
+        console.warn('[CreateStory] Image generation failed (non-fatal):', imgErr);
+      }
+
+      setGenerationStep('Almost ready…');
+
+      // ── Step 3: Save to Supabase ─────────────────────────────────────
+      let savedStoryId: string | null = null;
+      if (user?.id && child?.id && isSupabaseAvailable) {
+        try {
+          const { story: savedStory } = await createStory({
             user_id:   user.id,
             child_id:  child.id,
-            title:     `A ${themeObj?.label ?? 'Magical'} Story for ${child.name}`,
-            content:   null,
-            image_url: null,
+            title:     storyTitle,
+            content:   storyText,
+            image_url: imageUrl,
             theme:     themeObj?.label ?? selectedTheme,
           });
+          savedStoryId = savedStory?.id ?? null;
+        } catch (dbErr) {
+          console.warn('[CreateStory] Supabase save failed (non-fatal):', dbErr);
         }
-      } catch (err) {
-        console.warn('[CreateStory] Failed to save story metadata:', err);
-      } finally {
-        setIsGenerating(false);
-        setGenerationStep('');
-        Alert.alert(
-          '✨ Story Ready!',
-          `Your ${themeObj?.label?.toLowerCase() ?? ''} story for ${child?.name ?? 'your child'} is queued! The AI generation will be completed in the next step.`,
-          [{ text: 'Wonderful!', onPress: () => router.back() }]
-        );
       }
-    }, 4500);
+
+      // ── Step 4: Persist story for the player via AsyncStorage ────────
+      await AsyncStorage.setItem(
+        'current_story',
+        JSON.stringify({
+          id:        savedStoryId,
+          title:     storyTitle,
+          content:   storyText,
+          imageUrl,
+          childName: child.name,
+          theme:     themeObj?.label ?? selectedTheme,
+          createdAt: new Date().toISOString(),
+        })
+      );
+
+      // ── Step 5: Navigate to the immersive player ─────────────────────
+      setIsGenerating(false);
+      setGenerationStep('');
+      router.push('/(main)/player');
+
+    } catch (err) {
+      console.error('[CreateStory] Generation failed:', err);
+      setIsGenerating(false);
+      setGenerationStep('');
+      Alert.alert(
+        'Generation Failed',
+        'Something went wrong while creating your story. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   // ── Animated styles ────────────────────────────────────────────────────

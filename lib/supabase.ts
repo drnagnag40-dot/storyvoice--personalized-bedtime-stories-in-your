@@ -264,3 +264,17 @@ export async function getStories(userId: string, childId?: string) {
   const { data, error } = await query;
   return { stories: data as Story[] | null, error };
 }
+
+export async function updateStory(id: string, data: Partial<Omit<Story, 'id' | 'created_at'>>) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] updateStory skipped – Supabase not configured.');
+    return { story: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { data: story, error } = await supabase
+    .from('stories')
+    .update(data)
+    .eq('id', id)
+    .select()
+    .single();
+  return { story: story as Story | null, error };
+}
