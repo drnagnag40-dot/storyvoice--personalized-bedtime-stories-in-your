@@ -35,19 +35,86 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function ProgressDots({ current, total }: { current: number; total: number }) {
+/**
+ * VoiceProgressTracker — Phase 7
+ *
+ * A segmented progress bar that clearly communicates:
+ *   • Which phrases have been recorded (✓ gold fill)
+ *   • Which phrase is currently active (pulsing gold border)
+ *   • Which phrases are still pending (dim outline)
+ *   • How many are left to record (status text)
+ *   • An overall completion percentage bar
+ */
+function VoiceProgressTracker({
+  current,
+  total,
+  completed,
+}: {
+  current: number;
+  total: number;
+  completed: Set<number>;
+}) {
+  const recordedCount = completed.size;
+  const remaining = total - recordedCount;
+  const pct = Math.round((recordedCount / total) * 100);
+
+  // Derive status copy
+  const statusCopy = remaining === 0
+    ? '🎉 All phrases recorded!'
+    : remaining === total
+    ? `Record phrase ${current + 1} to begin`
+    : `${remaining} phrase${remaining > 1 ? 's' : ''} left to record`;
+
   return (
-    <View style={styles.progressDots}>
-      {Array.from({ length: total }, (_, i) => (
-        <View
-          key={i}
-          style={[
-            styles.progressDot,
-            i < current && styles.progressDotDone,
-            i === current && styles.progressDotActive,
-          ]}
-        />
-      ))}
+    <View style={styles.progressTracker}>
+      {/* Segment row */}
+      <View style={styles.progressSegments}>
+        {Array.from({ length: total }, (_, i) => {
+          const isDone    = completed.has(i);
+          const isCurrent = i === current;
+          return (
+            <View
+              key={i}
+              style={[
+                styles.progressSegment,
+                isDone    && styles.progressSegmentDone,
+                isCurrent && !isDone && styles.progressSegmentActive,
+              ]}
+            >
+              {isDone && (
+                <Text style={styles.progressSegmentCheck}>✓</Text>
+              )}
+              {isCurrent && !isDone && (
+                <View style={styles.progressSegmentActiveDot} />
+              )}
+              {/* Step number label below each segment */}
+              <Text style={[
+                styles.progressSegmentLabel,
+                isDone    && styles.progressSegmentLabelDone,
+                isCurrent && !isDone && styles.progressSegmentLabelActive,
+              ]}>
+                {i + 1}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Overall fill bar */}
+      <View style={styles.progressBarTrack}>
+        <View style={[styles.progressBarFill, { width: `${pct}%` }]} />
+      </View>
+
+      {/* Status text */}
+      <View style={styles.progressStatusRow}>
+        <Text style={[
+          styles.progressStatus,
+          remaining === 0 && styles.progressStatusDone,
+        ]}>
+          {statusCopy}
+        </Text>
+        <Text style={styles.progressPct}>{pct}%</Text>
+      </View>
     </View>
   );
 }
@@ -327,13 +394,11 @@ export default function VoiceStudioScreen() {
         </Text>
 
         {/* Progress */}
-        <View style={styles.progressSection}>
-          <ProgressDots current={paragraphIndex} total={TOTAL_PARAGRAPHS} />
-          <Text style={styles.progressLabel}>
-            Paragraph {paragraphIndex + 1} of {TOTAL_PARAGRAPHS}
-            {completedParagraphs.size > 0 && ` · ${completedParagraphs.size} recorded ✓`}
-          </Text>
-        </View>
+        <VoiceProgressTracker
+          current={paragraphIndex}
+          total={TOTAL_PARAGRAPHS}
+          completed={completedParagraphs}
+        />
 
         {/* Script card */}
         <Animated.View style={[styles.scriptCard, cardAnimStyle]}>
@@ -472,12 +537,90 @@ const styles = StyleSheet.create({
   stepText: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.celestialGold },
   title: { fontFamily: Fonts.extraBold, fontSize: 26, color: Colors.moonlightCream, marginBottom: 4 },
   subtitle: { fontFamily: Fonts.regular, fontSize: 14, color: Colors.textMuted, marginBottom: Spacing.md },
-  progressSection: { alignItems: 'center', marginBottom: Spacing.md },
-  progressDots: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  progressDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.borderColor },
-  progressDotActive: { width: 24, backgroundColor: Colors.celestialGold },
-  progressDotDone: { backgroundColor: Colors.successGreen },
-  progressLabel: { fontFamily: Fonts.medium, fontSize: 13, color: Colors.textMuted },
+  // ── Voice Progress Tracker ──────────────────────────────────────────────────
+  progressTracker: {
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  progressSegments: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  progressSegment: {
+    flex: 1,
+    height: 48,
+    borderRadius: Radius.md,
+    backgroundColor: 'rgba(61,63,122,0.4)',
+    borderWidth: 1.5,
+    borderColor: Colors.borderColor,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  progressSegmentDone: {
+    backgroundColor: 'rgba(107,203,119,0.15)',
+    borderColor: Colors.successGreen,
+  },
+  progressSegmentActive: {
+    backgroundColor: 'rgba(255,215,0,0.12)',
+    borderColor: Colors.celestialGold,
+    borderWidth: 2,
+  },
+  progressSegmentCheck: {
+    fontSize: 14,
+    color: Colors.successGreen,
+    fontFamily: Fonts.black,
+    lineHeight: 16,
+  },
+  progressSegmentActiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.celestialGold,
+  },
+  progressSegmentLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: 11,
+    color: Colors.textMuted,
+    lineHeight: 13,
+  },
+  progressSegmentLabelDone: {
+    color: Colors.successGreen,
+  },
+  progressSegmentLabelActive: {
+    color: Colors.celestialGold,
+  },
+  progressBarTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(61,63,122,0.5)',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: Colors.celestialGold,
+    borderRadius: 2,
+  },
+  progressStatusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressStatus: {
+    fontFamily: Fonts.medium,
+    fontSize: 12,
+    color: Colors.textMuted,
+    flex: 1,
+  },
+  progressStatusDone: {
+    color: Colors.successGreen,
+    fontFamily: Fonts.bold,
+  },
+  progressPct: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 12,
+    color: Colors.celestialGold,
+  },
   scriptCard: {
     backgroundColor: Colors.cardBg,
     borderRadius: Radius.xl,

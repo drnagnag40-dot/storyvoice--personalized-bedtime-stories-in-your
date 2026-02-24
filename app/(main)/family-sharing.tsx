@@ -17,6 +17,7 @@ import {
   TextInput,
   Alert,
   Clipboard,
+  Share,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -241,6 +242,25 @@ export default function FamilySharingScreen() {
     Alert.alert('Copied! 📋', `Invite code "${familyGroup.invite_code}" copied to clipboard.`);
   }, [familyGroup]);
 
+  const handleShareCode = useCallback(async () => {
+    if (!familyGroup) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await Share.share(
+        {
+          message: `✨ Join our StoryVoice family group!\n\nUse invite code: ${familyGroup.invite_code}\n\nDownload StoryVoice and enter this code in the Family Sharing Hub to share stories, voices, and child profiles together. 🌙`,
+          title:   'Join our StoryVoice Family',
+        },
+        {
+          dialogTitle: 'Share Family Invite Code',
+          subject:     `Join our StoryVoice family — Code: ${familyGroup.invite_code}`,
+        }
+      );
+    } catch (err) {
+      console.warn('[FamilySharing] share error:', err);
+    }
+  }, [familyGroup]);
+
   const triggerSparkleSync = () => {
     setIsSyncing(true);
     setTimeout(() => setIsSyncing(false), 3000);
@@ -378,6 +398,22 @@ export default function FamilySharingScreen() {
                 <Text style={styles.inviteCodeHint}>
                   Share this code with family members so they can join ✨
                 </Text>
+
+                {/* Native Share button */}
+                <TouchableOpacity
+                  style={styles.shareInviteBtn}
+                  onPress={() => void handleShareCode()}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={[Colors.celestialGold, Colors.softGold]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+                  />
+                  <Text style={styles.shareInviteBtnIcon}>📤</Text>
+                  <Text style={styles.shareInviteBtnText}>Share Invite Code</Text>
+                </TouchableOpacity>
 
                 {/* Members */}
                 <Text style={styles.membersTitle}>Family Members ({members.length})</Text>
@@ -658,6 +694,24 @@ const styles = StyleSheet.create({
   },
   copyBtnText: { fontFamily: Fonts.bold, fontSize: 13, color: Colors.celestialGold },
   inviteCodeHint: { fontFamily: Fonts.regular, fontSize: 11, color: Colors.textMuted, textAlign: 'center' },
+
+  shareInviteBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    borderRadius:    Radius.full,
+    overflow:        'hidden',
+    paddingVertical: 13,
+    gap:             Spacing.sm,
+    marginTop:       Spacing.xs,
+  },
+  shareInviteBtnIcon: { fontSize: 16 },
+  shareInviteBtnText: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   14,
+    color:      Colors.deepSpace,
+    letterSpacing: 0.2,
+  },
 
   membersTitle: { fontFamily: Fonts.bold, fontSize: 13, color: Colors.textMuted, marginTop: Spacing.sm },
   memberRow: {

@@ -38,6 +38,7 @@ import {
   buildNarratorPreviewPrompt,
   type NarratorPersonality,
 } from '@/lib/newell';
+import { trackNarratorSelected } from '@/lib/analytics';
 
 const { width: W } = Dimensions.get('window');
 const CARD_SIZE = 110;
@@ -321,6 +322,8 @@ export default function NarratorGallery({ childName, onNarratorSelected }: Narra
   const handleSelect = useCallback(async (narrator: NarratorPersonality) => {
     setSelectedId(narrator.id);
     await AsyncStorage.setItem(STORAGE_KEY, narrator.id);
+    // Track narrator popularity for internal analytics
+    void trackNarratorSelected(narrator.id);
     onNarratorSelected?.(narrator);
   }, [onNarratorSelected]);
 

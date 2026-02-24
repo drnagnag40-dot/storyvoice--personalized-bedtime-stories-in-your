@@ -53,6 +53,8 @@ import { toggleStoryFavorite, isSupabaseAvailable } from '@/lib/supabase';
 import { NARRATOR_PERSONALITIES, buildReflectionQuestionsPrompt, buildStoryBranchPrompt, type NarratorPersonality } from '@/lib/newell';
 import { generateText } from '@fastshot/ai';
 import { addStardust, incrementStoriesCompleted } from '@/lib/stardust';
+import { trackStoryEvent, trackSession } from '@/lib/analytics';
+import { cacheStory } from '@/lib/offlineCache';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -212,6 +214,24 @@ export default function PlayerScreen() {
       }
       setStory(parsed);
       setIsFavorite(parsed.is_favorite ?? false);
+
+      // Track story start & cache for offline access
+      void trackSession();
+      void trackStoryEvent({
+        story_id:    parsed.id ?? `story_${Date.now()}`,
+        title:       parsed.title ?? 'Untitled',
+        theme:       parsed.theme ?? 'unknown',
+        narrator_id: 'unknown',
+        event:       'started',
+      });
+      void cacheStory({
+        id:         parsed.id ?? `story_${Date.now()}`,
+        title:      parsed.title ?? 'Untitled',
+        content:    parsed.content,
+        theme:      parsed.theme ?? 'unknown',
+        image_url:  parsed.imageUrl ?? undefined,
+        child_name: parsed.childName,
+      });
 
       // Load active narrator
       try {
@@ -514,6 +534,14 @@ export default function PlayerScreen() {
         if (!story.isInteractive) {
           await addStardust(10, `Completed "${story.title}"`, '📖');
           await incrementStoriesCompleted();
+          // Track completion for analytics
+          void trackStoryEvent({
+            story_id:    story.id ?? `story_${Date.now()}`,
+            title:       story.title ?? 'Untitled',
+            theme:       story.theme ?? 'unknown',
+            narrator_id: 'unknown',
+            event:       'completed',
+          });
         }
 
         // Save journal entry

@@ -5,10 +5,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Modal,
   Alert,
   Platform,
   Switch,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -41,6 +43,11 @@ import {
   getMigrationTimestamp,
 } from '@/lib/migrationService';
 import { SUPPORTED_LANGUAGES, type LanguageCode } from '@/lib/newell';
+import {
+  getAnalyticsSummary,
+  type AnalyticsSummary,
+} from '@/lib/analytics';
+import { getCacheMeta, type CacheMeta } from '@/lib/offlineCache';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SettingRow {
@@ -295,6 +302,9 @@ export default function SettingsScreen() {
   const [migrationComplete,  setMigrationComplete]  = useState(false);
   const [appLanguage,        setAppLanguage]        = useState<LanguageCode>('en');
   const [isChangingLanguage, setIsChangingLanguage] = useState(false);
+  const [analyticsVisible,   setAnalyticsVisible]   = useState(false);
+  const [analyticsSummary,   setAnalyticsSummary]   = useState<AnalyticsSummary | null>(null);
+  const [cacheMeta,          setCacheMeta]          = useState<CacheMeta | null>(null);
 
   // Interval to refresh the sync label ("5m ago" → "6m ago")
   const labelRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -351,6 +361,10 @@ export default function SettingsScreen() {
       }
       const savedLang = await AsyncStorage.getItem('app_language');
       if (savedLang) setAppLanguage(savedLang as LanguageCode);
+
+      // Load offline cache metadata
+      const meta = await getCacheMeta();
+      setCacheMeta(meta);
     } catch {
       // ignore
     }
@@ -541,6 +555,40 @@ export default function SettingsScreen() {
     }, 280);
   }, [appLanguage, langFlipAnim, langShimmer]);
 
+  // ── Report an Issue ───────────────────────────────────────────────────────────
+  const handleReportIssue = useCallback(async () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const deviceInfo = `Device: ${Platform.OS} ${Platform.Version}`;
+    const appInfo    = 'App: StoryVoice v7.0';
+    const body       = encodeURIComponent(
+      `Hi StoryVoice Support,\n\nI'd like to report an issue:\n\n[Please describe the problem here]\n\n---\n${appInfo}\n${deviceInfo}`
+    );
+    const subject = encodeURIComponent('StoryVoice — Issue Report');
+    const mailUrl = `mailto:support@storyvoice.app?subject=${subject}&body=${body}`;
+    const supported = await Linking.canOpenURL(mailUrl);
+    if (supported) {
+      await Linking.openURL(mailUrl);
+    } else {
+      Alert.alert(
+        'Email Not Available',
+        'Please email us directly at support@storyvoice.app',
+        [{ text: 'OK' }]
+      );
+    }
+  }, []);
+
+  // ── View Analytics ────────────────────────────────────────────────────────────
+  const handleViewAnalytics = useCallback(async () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const [summary, meta] = await Promise.all([
+      getAnalyticsSummary(),
+      getCacheMeta(),
+    ]);
+    setAnalyticsSummary(summary);
+    setCacheMeta(meta);
+    setAnalyticsVisible(true);
+  }, []);
+
   // ── Section configs ───────────────────────────────────────────────────────────
   const appRows: SettingRow[] = [
     {
@@ -600,6 +648,29 @@ export default function SettingsScreen() {
       value: 'Unlock magic dust & badges',
       chevron: true,
       onPress: () => router.push('/(main)/stardust-shop'),
+    },
+  ];
+
+  const supportRows: SettingRow[] = [
+    {
+      icon:    '📊',
+      label:   'Story Analytics',
+      value:   'Top narrators & completion rates',
+      chevron: true,
+      onPress: () => void handleViewAnalytics(),
+    },
+    {
+      icon:    '🐛',
+      label:   'Report an Issue',
+      value:   'Send a pre-filled email to support',
+      chevron: true,
+      onPress: () => void handleReportIssue(),
+    },
+    {
+      icon:    '💾',
+      label:   'Offline Stories',
+      value:   cacheMeta ? `${cacheMeta.total_stories} stories cached locally` : 'Loading…',
+      chevron: false,
     },
   ];
 
@@ -769,15 +840,153 @@ export default function SettingsScreen() {
         {/* Family & Memories Section */}
         <Section title="✦ Family & Memories" items={familyRows} delay={280} />
 
+        {/* Support & Analytics Section */}
+        <Section title="🔍 Support & Analytics" items={supportRows} delay={320} />
+
         {/* Account Section */}
-        <Section title="Account" items={accountRows} delay={350} />
+        <Section title="Account" items={accountRows} delay={380} />
 
         {/* App version */}
         <Animated.View style={[versionStyle, styles.versionRow]}>
-          <Text style={styles.versionText}>StoryVoice · Phase 6 · v6.0</Text>
+          <Text style={styles.versionText}>StoryVoice · Phase 7 · v7.0</Text>
           <Text style={styles.versionSubText}>Made with 🌙 for sleepy little ones</Text>
         </Animated.View>
       </ScrollView>
+
+      {/* Analytics Modal */}
+      <Modal
+        visible={analyticsVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAnalyticsVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.analyticsModal}>
+            {Platform.OS === 'ios' && (
+              // BlurView not available here without proper import; use solid bg
+              null
+            )}
+            <LinearGradient
+              colors={[Colors.deepPurple, Colors.midnightNavy]}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            {/* Corner decorations */}
+            <View style={styles.analyticsCornerTL} />
+            <View style={styles.analyticsCornerBR} />
+
+            {/* Header */}
+            <View style={styles.analyticsHeader}>
+              <Text style={styles.analyticsTitle}>📊 Story Analytics</Text>
+              <TouchableOpacity
+                style={styles.analyticsCloseBtn}
+                onPress={() => setAnalyticsVisible(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.analyticsCloseTxt}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }}>
+              {/* Sessions */}
+              <View style={styles.analyticsStatRow}>
+                <Text style={styles.analyticsStatIcon}>🌙</Text>
+                <View style={styles.analyticsStatInfo}>
+                  <Text style={styles.analyticsStatLabel}>Total App Sessions</Text>
+                  <Text style={styles.analyticsStatValue}>{analyticsSummary?.total_sessions ?? 0}</Text>
+                </View>
+              </View>
+
+              {/* Top Narrator */}
+              <View style={styles.analyticsStatRow}>
+                <Text style={styles.analyticsStatIcon}>🏆</Text>
+                <View style={styles.analyticsStatInfo}>
+                  <Text style={styles.analyticsStatLabel}>Favourite Narrator</Text>
+                  <Text style={styles.analyticsStatValue}>
+                    {analyticsSummary?.top_narrator ?? 'None yet'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Overall completion */}
+              <View style={styles.analyticsStatRow}>
+                <Text style={styles.analyticsStatIcon}>📖</Text>
+                <View style={styles.analyticsStatInfo}>
+                  <Text style={styles.analyticsStatLabel}>Story Completion Rate</Text>
+                  <Text style={styles.analyticsStatValue}>
+                    {analyticsSummary?.overall_completion_rate ?? 0}%
+                  </Text>
+                </View>
+              </View>
+
+              {/* Narrator breakdown */}
+              {analyticsSummary && analyticsSummary.narrator_stats.length > 0 && (
+                <View style={styles.analyticsSection}>
+                  <Text style={styles.analyticsSectionTitle}>NARRATOR POPULARITY</Text>
+                  {analyticsSummary.narrator_stats.slice(0, 5).map((ns) => (
+                    <View key={ns.narrator_id} style={styles.narratorStatRow}>
+                      <Text style={styles.narratorStatEmoji}>{ns.emoji}</Text>
+                      <View style={styles.narratorStatInfo}>
+                        <View style={styles.narratorStatLabelRow}>
+                          <Text style={styles.narratorStatName}>{ns.name}</Text>
+                          <Text style={styles.narratorStatPct}>{ns.percentage}%</Text>
+                        </View>
+                        <View style={styles.narratorBarTrack}>
+                          <View style={[styles.narratorBarFill, { width: `${ns.percentage}%` }]} />
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Completion by theme */}
+              {analyticsSummary && analyticsSummary.story_completion.length > 0 && (
+                <View style={styles.analyticsSection}>
+                  <Text style={styles.analyticsSectionTitle}>COMPLETION BY THEME</Text>
+                  {analyticsSummary.story_completion.slice(0, 4).map((sc) => (
+                    <View key={sc.theme} style={styles.themeStatRow}>
+                      <View style={styles.themeStatInfo}>
+                        <View style={styles.themeStatLabelRow}>
+                          <Text style={styles.themeStatName}>{sc.theme}</Text>
+                          <Text style={styles.themeStatPct}>{sc.completion_rate}%</Text>
+                        </View>
+                        <Text style={styles.themeStatSub}>
+                          {sc.completed}/{sc.started} completed
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Offline cache */}
+              {cacheMeta && (
+                <View style={styles.analyticsSection}>
+                  <Text style={styles.analyticsSectionTitle}>OFFLINE CACHE</Text>
+                  <View style={styles.analyticsStatRow}>
+                    <Text style={styles.analyticsStatIcon}>💾</Text>
+                    <View style={styles.analyticsStatInfo}>
+                      <Text style={styles.analyticsStatLabel}>Stories Cached</Text>
+                      <Text style={styles.analyticsStatValue}>
+                        {cacheMeta.total_stories} / 20 max
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {analyticsSummary?.narrator_stats.length === 0 && analyticsSummary?.story_completion.length === 0 && (
+                <View style={styles.analyticsEmpty}>
+                  <Text style={styles.analyticsEmptyEmoji}>🌙</Text>
+                  <Text style={styles.analyticsEmptyText}>
+                    No data yet — create some stories and your analytics will appear here!
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1127,5 +1336,176 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.celestialGold,
     marginLeft: 2,
+  },
+
+  // ── Analytics Modal ──────────────────────────────────────────────────────────
+  modalOverlay: {
+    flex:            1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent:  'flex-end',
+  },
+  analyticsModal: {
+    backgroundColor: Colors.midnightNavy,
+    borderTopLeftRadius:  Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    padding:  Spacing.lg,
+    paddingBottom: Spacing.xxl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.2)',
+  },
+  analyticsCornerTL: {
+    position: 'absolute', top: 0, left: 0,
+    width: 50, height: 50,
+    borderTopLeftRadius: Radius.xl,
+    borderTopWidth: 2, borderLeftWidth: 2,
+    borderColor: 'rgba(255,215,0,0.4)',
+  },
+  analyticsCornerBR: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 50, height: 50,
+    borderBottomRightRadius: 0,
+    borderBottomWidth: 2, borderRightWidth: 2,
+    borderColor: 'rgba(255,215,0,0.4)',
+  },
+  analyticsHeader: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    marginBottom:   Spacing.lg,
+  },
+  analyticsTitle: {
+    fontFamily: Fonts.black,
+    fontSize:   18,
+    color:      Colors.moonlightCream,
+  },
+  analyticsCloseBtn: {
+    width:           32,
+    height:          32,
+    borderRadius:    16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems:      'center',
+    justifyContent:  'center',
+  },
+  analyticsCloseTxt: {
+    fontFamily: Fonts.bold,
+    fontSize:   14,
+    color:      Colors.textMuted,
+  },
+  analyticsStatRow: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             Spacing.md,
+    backgroundColor: 'rgba(255,215,0,0.06)',
+    borderRadius:    Radius.md,
+    padding:         Spacing.md,
+    marginBottom:    Spacing.sm,
+    borderWidth:     1,
+    borderColor:     'rgba(255,215,0,0.12)',
+  },
+  analyticsStatIcon: { fontSize: 22 },
+  analyticsStatInfo: { flex: 1 },
+  analyticsStatLabel: {
+    fontFamily: Fonts.medium,
+    fontSize:   11,
+    color:      Colors.textMuted,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  analyticsStatValue: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   17,
+    color:      Colors.celestialGold,
+    marginTop:  2,
+  },
+  analyticsSection: {
+    marginTop: Spacing.md,
+  },
+  analyticsSectionTitle: {
+    fontFamily:    Fonts.medium,
+    fontSize:      10,
+    color:         Colors.textMuted,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom:  Spacing.sm,
+    marginLeft:    4,
+  },
+  narratorStatRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           Spacing.sm,
+    marginBottom:  Spacing.sm,
+  },
+  narratorStatEmoji: { fontSize: 20, width: 28, textAlign: 'center' },
+  narratorStatInfo:  { flex: 1 },
+  narratorStatLabelRow: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    marginBottom:   4,
+  },
+  narratorStatName: {
+    fontFamily: Fonts.bold,
+    fontSize:   13,
+    color:      Colors.moonlightCream,
+  },
+  narratorStatPct: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   13,
+    color:      Colors.celestialGold,
+  },
+  narratorBarTrack: {
+    height:          6,
+    borderRadius:    3,
+    backgroundColor: 'rgba(61,63,122,0.6)',
+    overflow:        'hidden',
+  },
+  narratorBarFill: {
+    height:          '100%',
+    backgroundColor: Colors.celestialGold,
+    borderRadius:    3,
+  },
+  themeStatRow: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius:    Radius.sm,
+    padding:         Spacing.sm,
+    marginBottom:    Spacing.sm,
+    borderWidth:     1,
+    borderColor:     Colors.borderColor,
+  },
+  themeStatInfo: { flex: 1 },
+  themeStatLabelRow: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+  },
+  themeStatName: {
+    fontFamily:    Fonts.bold,
+    fontSize:      13,
+    color:         Colors.moonlightCream,
+    textTransform: 'capitalize',
+  },
+  themeStatPct: {
+    fontFamily: Fonts.extraBold,
+    fontSize:   13,
+    color:      Colors.successGreen,
+  },
+  themeStatSub: {
+    fontFamily: Fonts.regular,
+    fontSize:   11,
+    color:      Colors.textMuted,
+    marginTop:  2,
+  },
+  analyticsEmpty: {
+    alignItems:   'center',
+    paddingVertical: Spacing.xl,
+    gap:          Spacing.md,
+  },
+  analyticsEmptyEmoji: { fontSize: 40 },
+  analyticsEmptyText: {
+    fontFamily: Fonts.medium,
+    fontSize:   13,
+    color:      Colors.textMuted,
+    textAlign:  'center',
+    lineHeight: 20,
+    paddingHorizontal: Spacing.lg,
   },
 });

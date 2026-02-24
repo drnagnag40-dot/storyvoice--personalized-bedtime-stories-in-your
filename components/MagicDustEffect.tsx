@@ -1,26 +1,35 @@
 /**
- * MagicDustEffect
+ * MagicDustEffect — Phase 7 Performance-Optimised
  *
  * A celebratory particle burst — sparkle emojis and golden dots float upward
  * and fade out over ~2.5 s. Designed to trigger on successful data migration.
+ *
+ * Phase 7 optimisations:
+ *  1. Particle count reduced 34 → 24 (still visually lush, 30% fewer worklets).
+ *  2. Per-particle JS callbacks removed; `onFinished` uses a single timer instead,
+ *     eliminating `runOnJS` bridge calls entirely.
+ *  3. `cancelAnimation` called on every shared value on unmount to prevent
+ *     stale worklet execution after the component is removed from the tree.
+ *  4. `InteractionManager.runAfterInteractions` defers particle setup so it
+ *     doesn't compete with the triggering screen's own animation.
  */
 
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, InteractionManager } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withDelay,
   withSequence,
+  cancelAnimation,
   Easing,
-  runOnJS,
 } from 'react-native-reanimated';
 
 const { width: W, height: H } = Dimensions.get('window');
 
 const EMOJIS = ['✨', '⭐', '🌟', '💫', '✦', '•', '✨', '⭐', '💛', '✦'];
-const GOLD = '#FFD700';
+const GOLD   = '#FFD700';
 const SILVER = '#E8E8FF';
 
 interface Particle {
@@ -36,46 +45,49 @@ interface Particle {
   color: string;
 }
 
-function SingleParticle({
-  p,
-  onDone,
-}: {
-  p: Particle;
-  onDone?: () => void;
-}) {
-  const opacity   = useSharedValue(0);
+// ─── Single Particle ──────────────────────────────────────────────────────────
+
+function SingleParticle({ p }: { p: Particle }) {
+  const opacity    = useSharedValue(0);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
-  const scale     = useSharedValue(0.3);
+  const scale      = useSharedValue(0.3);
 
   useEffect(() => {
-    // Rise + sparkle in
-    opacity.value = withDelay(
-      p.delay,
-      withSequence(
-        withTiming(1,   { duration: 300, easing: Easing.out(Easing.cubic) }),
-        withTiming(0.9, { duration: p.duration * 0.5 }),
-        withTiming(0,   { duration: p.duration * 0.5, easing: Easing.in(Easing.quad) })
-      )
-    );
-    translateX.value = withDelay(
-      p.delay,
-      withTiming(p.driftX, { duration: p.duration + 300, easing: Easing.out(Easing.quad) })
-    );
-    translateY.value = withDelay(
-      p.delay,
-      withTiming(p.driftY, {
-        duration: p.duration + 300,
-        easing: Easing.out(Easing.cubic),
-      }, onDone ? () => runOnJS(onDone)() : undefined)
-    );
-    scale.value = withDelay(
-      p.delay,
-      withSequence(
-        withTiming(1.2, { duration: 300, easing: Easing.out(Easing.back(3)) }),
-        withTiming(0.8, { duration: p.duration })
-      )
-    );
+    const task = InteractionManager.runAfterInteractions(() => {
+      // Rise + sparkle in/out
+      opacity.value = withDelay(
+        p.delay,
+        withSequence(
+          withTiming(1,   { duration: 300, easing: Easing.out(Easing.cubic) }),
+          withTiming(0.9, { duration: p.duration * 0.5 }),
+          withTiming(0,   { duration: p.duration * 0.5, easing: Easing.in(Easing.quad) })
+        )
+      );
+      translateX.value = withDelay(
+        p.delay,
+        withTiming(p.driftX, { duration: p.duration + 300, easing: Easing.out(Easing.quad) })
+      );
+      translateY.value = withDelay(
+        p.delay,
+        withTiming(p.driftY, { duration: p.duration + 300, easing: Easing.out(Easing.cubic) })
+      );
+      scale.value = withDelay(
+        p.delay,
+        withSequence(
+          withTiming(1.2, { duration: 300, easing: Easing.out(Easing.back(3)) }),
+          withTiming(0.8, { duration: p.duration })
+        )
+      );
+    });
+
+    return () => {
+      task.cancel();
+      cancelAnimation(opacity);
+      cancelAnimation(translateX);
+      cancelAnimation(translateY);
+      cancelAnimation(scale);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -84,7 +96,7 @@ function SingleParticle({
     transform: [
       { translateX: translateX.value },
       { translateY: translateY.value },
-      { scale: scale.value },
+      { scale:      scale.value },
     ],
   }));
 
@@ -102,6 +114,8 @@ function SingleParticle({
   );
 }
 
+// ─── MagicDustEffect ──────────────────────────────────────────────────────────
+
 interface MagicDustEffectProps {
   visible: boolean;
   /** Called when the animation finishes (all particles faded) */
@@ -118,13 +132,15 @@ export default function MagicDustEffect({
   const centreX = W / 2;
   const centreY = originY ?? H * 0.5;
 
+  // Reduced to 24 particles (from 34) — still visually impressive while cutting
+  // worklet count by ~30 %, which meaningfully reduces UI-thread pressure.
   const particles = useMemo<Particle[]>(() => {
     if (!visible) return [];
-    return Array.from({ length: 34 }, (_, i) => {
-      const angle     = (Math.random() * Math.PI * 2);
-      const distance  = Math.random() * 160 + 60;
-      const emoji     = EMOJIS[i % EMOJIS.length];
-      const isGold    = Math.random() > 0.4;
+    return Array.from({ length: 24 }, (_, i) => {
+      const angle    = Math.random() * Math.PI * 2;
+      const distance = Math.random() * 160 + 60;
+      const emoji    = EMOJIS[i % EMOJIS.length];
+      const isGold   = Math.random() > 0.4;
       return {
         id:       i,
         emoji,
@@ -138,18 +154,19 @@ export default function MagicDustEffect({
         color:    isGold ? GOLD : SILVER,
       };
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
-    // Auto-call onFinished after the longest possible animation duration
+    // Single JS-side timer replaces per-particle runOnJS callbacks — zero bridge
+    // traffic during the animation itself.
     const maxDelay = 400 + 900 + 1000 + 300 + 500; // generous buffer
     const timer = setTimeout(() => {
       onFinished?.();
     }, maxDelay);
     return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   if (!visible || particles.length === 0) return null;
