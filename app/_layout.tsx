@@ -40,7 +40,7 @@ export default function RootLayout() {
         supabaseClient={supabase}
         routes={{
           login: '/welcome',
-          afterLogin: '/(onboarding)/child-profile',
+          afterLogin: '/(main)/home',
           protected: ['(main)', '(onboarding)'],
           guest: ['(auth)'],
         }}

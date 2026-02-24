@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   FlatList,
-  Alert,
   LayoutAnimation,
   Platform,
   UIManager,
@@ -132,7 +131,7 @@ function StoryCard({
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
 
   const [child,          setChild]          = useState<Child | null>(null);
   const [voices,         setVoices]         = useState<ParentVoice[]>([]);
@@ -306,27 +305,6 @@ export default function HomeScreen() {
     }
   }, [user?.id]);
 
-  // ── Sign out ──────────────────────────────────────────────────────────────────
-  const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await AsyncStorage.multiRemove([
-            'active_child_id',
-            'active_voice_id',
-            'selected_voice_type',
-            'onboarding_complete',
-            'pending_child_profile',
-          ]);
-          await signOut();
-        },
-      },
-    ]);
-  };
-
   const headerStyle  = useAnimatedStyle(() => ({ opacity: headerOpacity.value }));
   const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
   const activeVoice  = voices.find((v) => v.id === activeVoiceId) ?? voices[0] ?? null;
@@ -388,7 +366,9 @@ export default function HomeScreen() {
           </View>
           <TouchableOpacity
             style={styles.settingsButton}
-            onPress={() => requireParentalGate('Settings', handleSignOut)}
+            onPress={() =>
+              requireParentalGate('Settings', () => router.push('/(main)/settings'))
+            }
           >
             <Text style={styles.settingsIcon}>⚙️</Text>
           </TouchableOpacity>

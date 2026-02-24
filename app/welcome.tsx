@@ -95,7 +95,7 @@ export default function WelcomeScreen() {
 
   const handleCTA = () => {
     if (isAuthenticated) {
-      router.replace('/(onboarding)/child-profile');
+      router.replace('/(main)/home');
     } else {
       router.push('/(auth)/sign-in');
     }
