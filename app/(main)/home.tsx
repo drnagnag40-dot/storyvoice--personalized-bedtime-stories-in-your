@@ -29,14 +29,12 @@ import StarField from '@/components/StarField';
 import ParentalGate from '@/components/ParentalGate';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import {
-  getChildren,
-  getParentVoices,
-  getStories,
   toggleStoryFavorite,
   upsertUserPreferences,
   isSupabaseAvailable,
 } from '@/lib/supabase';
 import type { Child, ParentVoice, Story } from '@/lib/supabase';
+import { loadHybridData } from '@/lib/syncService';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android') {
@@ -180,45 +178,46 @@ export default function HomeScreen() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Load active voice from local storage first (fast)
+      // Load active voice ID from local storage first (immediate)
       const savedVoiceId = await AsyncStorage.getItem('active_voice_id');
       if (savedVoiceId) setActiveVoiceId(savedVoiceId);
 
-      if (user?.id) {
-        const { children } = await getChildren(user.id);
-        if (children && children.length > 0) {
-          setChild(children[0]);
-        } else {
-          const local = await AsyncStorage.getItem('pending_child_profile');
-          if (local) setChild(JSON.parse(local) as Child);
-        }
-        const { voices: v } = await getParentVoices(user.id);
-        if (v) setVoices(v);
+      // Use hybrid data loader: serves cache first, then refreshes from cloud
+      const data = await loadHybridData(user?.id ?? null);
 
-        const firstChildId = children?.[0]?.id;
-        const { stories: s } = await getStories(user.id, firstChildId);
-        if (s) {
-          setStories(s);
-          // Keep local cache in sync
-          await AsyncStorage.setItem('local_stories', JSON.stringify(s.slice(0, 20)));
+      if (data.children.length > 0) {
+        setChild(data.children[0]);
+      }
+
+      if (data.voices.length > 0) {
+        setVoices(data.voices);
+        // If no voice was set locally, auto-select the first one
+        if (!savedVoiceId && data.voices[0]) {
+          setActiveVoiceId(data.voices[0].id);
+          await AsyncStorage.setItem('active_voice_id', data.voices[0].id);
         }
-      } else {
+      }
+
+      if (data.stories.length > 0) {
+        setStories(data.stories);
+      }
+
+      // Sync active_voice_id from preferences if available
+      if (data.preferences?.active_voice_id) {
+        setActiveVoiceId(data.preferences.active_voice_id);
+      }
+    } catch {
+      // Last-resort fallback: read directly from AsyncStorage
+      try {
         const local = await AsyncStorage.getItem('pending_child_profile');
         if (local) setChild(JSON.parse(local) as Child);
         const localStories = await AsyncStorage.getItem('local_stories');
         if (localStories) {
           const parsed = JSON.parse(localStories) as Story[];
-          // Ensure is_favorite defaults to false for legacy records
           setStories(parsed.map((s) => ({ ...s, is_favorite: s.is_favorite ?? false })));
         }
-      }
-    } catch {
-      const local = await AsyncStorage.getItem('pending_child_profile');
-      if (local) setChild(JSON.parse(local) as Child);
-      const localStories = await AsyncStorage.getItem('local_stories');
-      if (localStories) {
-        const parsed = JSON.parse(localStories) as Story[];
-        setStories(parsed.map((s) => ({ ...s, is_favorite: s.is_favorite ?? false })));
+      } catch {
+        // ignore
       }
     } finally {
       setIsLoading(false);

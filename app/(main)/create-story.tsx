@@ -28,7 +28,7 @@ import * as Haptics from 'expo-haptics';
 import WarpStarField from '@/components/WarpStarField';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { generateText, generateImage } from '@fastshot/ai';
-import { getChildren, createStory, isSupabaseAvailable } from '@/lib/supabase';
+import { getChildren, createStory, isSupabaseAvailable, upsertUserPreferences } from '@/lib/supabase';
 import { buildStoryPrompt, buildImagePrompt } from '@/lib/newell';
 import type { Child } from '@/lib/supabase';
 
@@ -295,11 +295,11 @@ export default function CreateStoryScreen() {
 
       // ── Step 3: Save to Supabase ─────────────────────────────────────
       let savedStoryId: string | null = null;
-      if (user?.id && child?.id && isSupabaseAvailable) {
+      if (user?.id && isSupabaseAvailable) {
         try {
           const { story: savedStory } = await createStory({
             user_id:     user.id,
-            child_id:    child.id,
+            child_id:    child?.id ?? null,
             title:       storyTitle,
             content:     storyText,
             image_url:   imageUrl,
@@ -307,6 +307,11 @@ export default function CreateStoryScreen() {
             is_favorite: false,
           });
           savedStoryId = savedStory?.id ?? null;
+
+          // Update last_sync_at in user preferences
+          await upsertUserPreferences(user.id, {
+            last_sync_at: new Date().toISOString(),
+          });
         } catch (dbErr) {
           console.warn('[CreateStory] Supabase save failed (non-fatal):', dbErr);
         }

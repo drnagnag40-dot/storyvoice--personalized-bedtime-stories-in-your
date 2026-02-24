@@ -207,6 +207,7 @@ export default function VoiceSelectionScreen() {
           duration_seconds: null,
           script_paragraphs_recorded: 0,
           is_complete: false,
+          recording_labels: {},
         });
         if (voice) {
           await AsyncStorage.setItem('active_voice_id', voice.id);

@@ -88,7 +88,31 @@ export interface ParentVoice {
   duration_seconds: number | null;
   script_paragraphs_recorded: number;
   is_complete: boolean;
+  recording_labels: Record<string, unknown>;
   created_at: string;
+  updated_at: string;
+}
+
+export interface Story {
+  id: string;
+  user_id: string;
+  child_id: string | null;
+  title: string;
+  content: string | null;
+  image_url: string | null;
+  theme: string | null;
+  is_favorite: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserPreferences {
+  user_id: string;
+  active_voice_id: string | null;
+  active_child_id: string | null;
+  narrator_type: 'mom' | 'dad' | 'custom' | null;
+  notifications_enabled: boolean;
+  last_sync_at: string;
   updated_at: string;
 }
 
@@ -104,7 +128,7 @@ const SUPABASE_NOT_CONFIGURED_ERROR = {
 };
 
 // ──────────────────────────────────────────────────────────
-// Database helpers – each one guards against missing config
+// User Profile
 // ──────────────────────────────────────────────────────────
 export async function upsertUserProfile(userId: string, email: string, fullName?: string) {
   if (!isSupabaseConfigured) {
@@ -123,17 +147,20 @@ export async function upsertUserProfile(userId: string, email: string, fullName?
   return error;
 }
 
+// ──────────────────────────────────────────────────────────
+// Child Profiles  (table: child_profiles)
+// ──────────────────────────────────────────────────────────
 export async function createChild(data: Omit<Child, 'id' | 'created_at' | 'updated_at'>) {
   if (!isSupabaseConfigured) {
     console.warn('[Supabase] createChild skipped – Supabase not configured.');
     return { child: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
   }
   const { data: child, error } = await supabase
-    .from('children')
-    .insert(data)
+    .from('child_profiles')
+    .insert({ ...data, updated_at: new Date().toISOString() })
     .select()
     .single();
-  return { child, error };
+  return { child: child as Child | null, error };
 }
 
 export async function updateChild(id: string, data: Partial<Child>) {
@@ -142,12 +169,12 @@ export async function updateChild(id: string, data: Partial<Child>) {
     return { child: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
   }
   const { data: child, error } = await supabase
-    .from('children')
+    .from('child_profiles')
     .update({ ...data, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
-  return { child, error };
+  return { child: child as Child | null, error };
 }
 
 export async function getChildren(userId: string) {
@@ -156,24 +183,36 @@ export async function getChildren(userId: string) {
     return { children: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
   }
   const { data, error } = await supabase
-    .from('children')
+    .from('child_profiles')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
   return { children: data as Child[] | null, error };
 }
 
+export async function deleteChild(id: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] deleteChild skipped – Supabase not configured.');
+    return { error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { error } = await supabase.from('child_profiles').delete().eq('id', id);
+  return { error };
+}
+
+// ──────────────────────────────────────────────────────────
+// Voice Profiles  (table: voice_profiles)
+// ──────────────────────────────────────────────────────────
 export async function createParentVoice(data: Omit<ParentVoice, 'id' | 'created_at' | 'updated_at'>) {
   if (!isSupabaseConfigured) {
     console.warn('[Supabase] createParentVoice skipped – Supabase not configured.');
     return { voice: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
   }
   const { data: voice, error } = await supabase
-    .from('parent_voices')
-    .insert(data)
+    .from('voice_profiles')
+    .insert({ ...data, updated_at: new Date().toISOString() })
     .select()
     .single();
-  return { voice, error };
+  return { voice: voice as ParentVoice | null, error };
 }
 
 export async function updateParentVoice(id: string, data: Partial<ParentVoice>) {
@@ -182,12 +221,12 @@ export async function updateParentVoice(id: string, data: Partial<ParentVoice>) 
     return { voice: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
   }
   const { data: voice, error } = await supabase
-    .from('parent_voices')
+    .from('voice_profiles')
     .update({ ...data, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
-  return { voice, error };
+  return { voice: voice as ParentVoice | null, error };
 }
 
 export async function getParentVoices(userId: string) {
@@ -196,69 +235,33 @@ export async function getParentVoices(userId: string) {
     return { voices: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
   }
   const { data, error } = await supabase
-    .from('parent_voices')
+    .from('voice_profiles')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
   return { voices: data as ParentVoice[] | null, error };
 }
 
-// ──────────────────────────────────────────────────────────
-// Stories
-// SQL migration (apply once in Supabase dashboard or via MCP):
-//
-// CREATE TABLE stories (
-//   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-//   user_id     UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-//   child_id    UUID        NOT NULL REFERENCES children(id) ON DELETE CASCADE,
-//   title       TEXT        NOT NULL,
-//   content     TEXT,
-//   image_url   TEXT,
-//   theme       TEXT,
-//   is_favorite BOOLEAN     NOT NULL DEFAULT FALSE,
-//   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-// );
-// ALTER TABLE stories ENABLE ROW LEVEL SECURITY;
-// CREATE POLICY "Users manage own stories" ON stories
-//   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-//
-// -- User preferences (active voice, etc.)
-// CREATE TABLE user_preferences (
-//   user_id        UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-//   active_voice_id TEXT,
-//   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-// );
-// ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
-// CREATE POLICY "Users manage own preferences" ON user_preferences
-//   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-// ──────────────────────────────────────────────────────────
-
-export interface Story {
-  id: string;
-  user_id: string;
-  child_id: string;
-  title: string;
-  content: string | null;
-  image_url: string | null;
-  theme: string | null;
-  is_favorite: boolean;
-  created_at: string;
+export async function deleteParentVoice(id: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] deleteParentVoice skipped – Supabase not configured.');
+    return { error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { error } = await supabase.from('voice_profiles').delete().eq('id', id);
+  return { error };
 }
 
-export interface UserPreferences {
-  user_id: string;
-  active_voice_id: string | null;
-  updated_at: string;
-}
-
-export async function createStory(data: Omit<Story, 'id' | 'created_at'>) {
+// ──────────────────────────────────────────────────────────
+// Stories  (table: stories)
+// ──────────────────────────────────────────────────────────
+export async function createStory(data: Omit<Story, 'id' | 'created_at' | 'updated_at'>) {
   if (!isSupabaseConfigured) {
     console.warn('[Supabase] createStory skipped – Supabase not configured.');
     return { story: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
   }
   const { data: story, error } = await supabase
     .from('stories')
-    .insert(data)
+    .insert({ ...data, updated_at: new Date().toISOString() })
     .select()
     .single();
   return { story: story as Story | null, error };
@@ -290,7 +293,7 @@ export async function updateStory(id: string, data: Partial<Omit<Story, 'id' | '
   }
   const { data: story, error } = await supabase
     .from('stories')
-    .update(data)
+    .update({ ...data, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
@@ -304,15 +307,23 @@ export async function toggleStoryFavorite(id: string, isFavorite: boolean) {
   }
   const { error } = await supabase
     .from('stories')
-    .update({ is_favorite: isFavorite })
+    .update({ is_favorite: isFavorite, updated_at: new Date().toISOString() })
     .eq('id', id);
   return { error };
 }
 
-// ──────────────────────────────────────────────────────────
-// User Preferences
-// ──────────────────────────────────────────────────────────
+export async function deleteStory(id: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] deleteStory skipped – Supabase not configured.');
+    return { error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { error } = await supabase.from('stories').delete().eq('id', id);
+  return { error };
+}
 
+// ──────────────────────────────────────────────────────────
+// User Preferences  (table: user_preferences)
+// ──────────────────────────────────────────────────────────
 export async function upsertUserPreferences(
   userId: string,
   prefs: Partial<Omit<UserPreferences, 'user_id' | 'updated_at'>>
@@ -323,7 +334,14 @@ export async function upsertUserPreferences(
   }
   const { error } = await supabase
     .from('user_preferences')
-    .upsert({ user_id: userId, ...prefs, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    .upsert(
+      {
+        user_id: userId,
+        ...prefs,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
   return { error };
 }
 
@@ -338,4 +356,21 @@ export async function getUserPreferences(userId: string) {
     .eq('user_id', userId)
     .single();
   return { preferences: data as UserPreferences | null, error };
+}
+
+// ──────────────────────────────────────────────────────────
+// Full user data deletion (for account deletion)
+// ──────────────────────────────────────────────────────────
+export async function deleteAllUserData(userId: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] deleteAllUserData skipped – Supabase not configured.');
+    return { error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  // Delete in order to respect any foreign key constraints
+  await supabase.from('user_preferences').delete().eq('user_id', userId);
+  await supabase.from('stories').delete().eq('user_id', userId);
+  await supabase.from('voice_profiles').delete().eq('user_id', userId);
+  await supabase.from('child_profiles').delete().eq('user_id', userId);
+  await supabase.from('users').delete().eq('id', userId);
+  return { error: null };
 }

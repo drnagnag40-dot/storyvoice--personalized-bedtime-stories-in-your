@@ -24,7 +24,7 @@ import StarField from '@/components/StarField';
 import AudioWaveform from '@/components/AudioWaveform';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { buildVoiceScript } from '@/lib/newell';
-import { updateParentVoice } from '@/lib/supabase';
+import { updateParentVoice, getParentVoices, isSupabaseAvailable, upsertUserPreferences } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOTAL_PARAGRAPHS = 5;
@@ -240,12 +240,41 @@ export default function VoiceStudioScreen() {
     setIsSaving(true);
     try {
       const voiceId = await AsyncStorage.getItem('active_voice_id');
+      const isComplete = completedParagraphs.size >= TOTAL_PARAGRAPHS;
+
       if (voiceId && user?.id) {
+        // Build recording labels: map each paragraph index to its URI
+        const recordingLabels: Record<string, string> = {};
+        recordingUriRef.current.forEach((uri, idx) => {
+          if (uri) recordingLabels[`paragraph_${idx + 1}`] = uri;
+        });
+
         await updateParentVoice(voiceId, {
           script_paragraphs_recorded: completedParagraphs.size,
-          is_complete: completedParagraphs.size >= TOTAL_PARAGRAPHS,
+          is_complete: isComplete,
+          recording_labels: recordingLabels,
+          duration_seconds: recordingUriRef.current.reduce(
+            (acc, _) => acc + Math.round(recordingSeconds / Math.max(recordingUriRef.current.filter(Boolean).length, 1)),
+            0
+          ),
         });
+
+        // Refresh voice profiles cache in AsyncStorage
+        if (isSupabaseAvailable) {
+          const { voices } = await getParentVoices(user.id);
+          if (voices) {
+            await AsyncStorage.setItem('sync_voice_profiles', JSON.stringify(voices));
+          }
+
+          // Sync active voice and narrator type to user_preferences
+          await upsertUserPreferences(user.id, {
+            active_voice_id: voiceId,
+            narrator_type: voiceType,
+            last_sync_at: new Date().toISOString(),
+          });
+        }
       }
+
       await AsyncStorage.setItem('onboarding_complete', 'true');
       router.replace('/(main)/home');
     } catch {

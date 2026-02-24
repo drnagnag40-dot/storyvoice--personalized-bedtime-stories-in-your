@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@fastshot/auth';
 import StarField from '@/components/StarField';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
-import { createChild } from '@/lib/supabase';
+import { createChild, updateChild, getChildren, isSupabaseAvailable, upsertUserPreferences } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const INTERESTS = [
@@ -81,26 +81,42 @@ export default function ChildProfileScreen() {
 
     setIsSaving(true);
     try {
-      const { child, error } = await createChild({
-        user_id: user.id,
+      const profileData = {
         name: name.trim(),
         birthday: birthday.toISOString().split('T')[0],
         age,
         interests: selectedInterests,
         life_notes: lifeNotes.trim() || null,
-      });
+      };
+
+      // Check if child already exists in cloud to decide create vs update
+      let savedChildId: string | null = null;
+      const existingIdRaw = await AsyncStorage.getItem('active_child_id');
+
+      const { child, error } = existingIdRaw
+        ? await updateChild(existingIdRaw, profileData)
+        : await createChild({ user_id: user.id, ...profileData });
 
       if (error) {
         // If Supabase not yet connected, store locally and proceed
-        await AsyncStorage.setItem('pending_child_profile', JSON.stringify({
-          name: name.trim(),
-          birthday: birthday.toISOString().split('T')[0],
-          age,
-          interests: selectedInterests,
-          life_notes: lifeNotes.trim() || null,
-        }));
+        await AsyncStorage.setItem('pending_child_profile', JSON.stringify(profileData));
       } else if (child) {
+        savedChildId = child.id;
         await AsyncStorage.setItem('active_child_id', child.id);
+        await AsyncStorage.setItem('pending_child_profile', JSON.stringify(child));
+
+        // Refresh the child profile cache
+        const { children } = await getChildren(user.id);
+        if (children) {
+          await AsyncStorage.setItem('sync_child_profiles', JSON.stringify(children));
+        }
+
+        // Sync active_child_id to user_preferences
+        if (isSupabaseAvailable) {
+          await upsertUserPreferences(user.id, {
+            active_child_id: savedChildId,
+          });
+        }
       }
 
       router.push('/(onboarding)/voice-selection');
