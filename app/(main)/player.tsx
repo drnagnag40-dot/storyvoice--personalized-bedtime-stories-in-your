@@ -25,6 +25,7 @@ import {
   Modal,
   Alert,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -49,8 +50,9 @@ import StarField from '@/components/StarField';
 import AmbientMixer from '@/components/AmbientMixer';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { toggleStoryFavorite, isSupabaseAvailable } from '@/lib/supabase';
-import { NARRATOR_PERSONALITIES, buildReflectionQuestionsPrompt, type NarratorPersonality } from '@/lib/newell';
+import { NARRATOR_PERSONALITIES, buildReflectionQuestionsPrompt, buildStoryBranchPrompt, type NarratorPersonality } from '@/lib/newell';
 import { generateText } from '@fastshot/ai';
+import { addStardust, incrementStoriesCompleted } from '@/lib/stardust';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -64,7 +66,22 @@ interface CurrentStory {
   theme: string;
   createdAt: string;
   is_favorite?: boolean;
+  isInteractive?: boolean;
+  choiceOptions?: { emoji: string; label: string; value: string }[];
+  branchContent?: string | null;
 }
+
+interface JournalEntry {
+  id: string;
+  date: string;
+  storyTitle: string;
+  childName: string;
+  theme?: string;
+  answers: { question: string; answer: string }[];
+  parentNotes: string;
+}
+
+const JOURNAL_KEY = 'journal_entries';
 
 const SLEEP_TIMER_OPTIONS = [
   { label: 'Off',    minutes: 0  },
@@ -148,6 +165,23 @@ export default function PlayerScreen() {
 
   // Glow-Reflect border animation
   const glowBorderPulse = useSharedValue(0);
+
+  // Interactive Adventure
+  const [showChoiceCards, setShowChoiceCards] = useState(false);
+  const [isGeneratingBranch, setIsGeneratingBranch] = useState(false);
+  const [selectedChoiceIdx, setSelectedChoiceIdx] = useState<number | null>(null);
+  const [choiceTimerLeft, setChoiceTimerLeft] = useState(30);
+  const choiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Choice zoom animations
+  const choiceAScale = useSharedValue(1);
+  const choiceAOpacity = useSharedValue(1);
+  const choiceBScale = useSharedValue(1);
+  const choiceBOpacity = useSharedValue(1);
+
+  // Reflection answers for journal (populated when parent types answers in future phase)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [reflectionAnswers, setReflectionAnswers] = useState<string[]>([]);
 
   // ── Refs for resources that MUST be cleaned up ────────────────────────────
   // Storing intervals/timeouts in refs ensures they survive re-renders and can
@@ -294,6 +328,10 @@ export default function PlayerScreen() {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
       }
+      if (choiceTimerRef.current !== null) {
+        clearInterval(choiceTimerRef.current);
+        choiceTimerRef.current = null;
+      }
       cancelAnimation(glowBorderPulse);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -305,6 +343,111 @@ export default function PlayerScreen() {
     setShowTimerModal(false);
     startSleepTimer(minutes);
   }, [startSleepTimer]);
+
+  // ── Interactive Adventure – Choice Selection ──────────────────────────────
+  const handleChoiceSelect = useCallback(async (choiceIdx: number) => {
+    if (!story || selectedChoiceIdx !== null || isGeneratingBranch) return;
+
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    setSelectedChoiceIdx(choiceIdx);
+
+    // Clear choice timer
+    if (choiceTimerRef.current) {
+      clearInterval(choiceTimerRef.current);
+      choiceTimerRef.current = null;
+    }
+
+    // Zoom animation: selected expands, other fades
+    if (choiceIdx === 0) {
+      choiceAScale.value = withSpring(1.05, { damping: 8, stiffness: 200 });
+      choiceBScale.value = withTiming(0.85, { duration: 400 });
+      choiceBOpacity.value = withTiming(0, { duration: 350 });
+    } else {
+      choiceBScale.value = withSpring(1.05, { damping: 8, stiffness: 200 });
+      choiceAScale.value = withTiming(0.85, { duration: 400 });
+      choiceAOpacity.value = withTiming(0, { duration: 350 });
+    }
+
+    setShowChoiceCards(false);
+    setIsGeneratingBranch(true);
+
+    try {
+      const chosenOption = story.choiceOptions?.[choiceIdx];
+      const narratorId = await AsyncStorage.getItem('selected_narrator_id');
+      const narrator = narratorId ? NARRATOR_PERSONALITIES.find((n) => n.id === narratorId) : null;
+      const langCode = await AsyncStorage.getItem('app_language') ?? 'en';
+
+      const branchPrompt = buildStoryBranchPrompt(
+        story.content,
+        chosenOption?.value ?? chosenOption?.label ?? 'continue',
+        story.childName,
+        narrator ?? undefined,
+        langCode !== 'en' ? langCode : undefined
+      );
+
+      const branchText = await generateText({ prompt: branchPrompt });
+      if (!branchText) throw new Error('Empty branch');
+
+      const updatedStory = { ...story, branchContent: branchText.trim() };
+      await AsyncStorage.setItem('current_story', JSON.stringify(updatedStory));
+
+      // Update local_stories
+      const localRaw = await AsyncStorage.getItem('local_stories');
+      if (localRaw) {
+        const local = JSON.parse(localRaw) as CurrentStory[];
+        const updated = local.map((s) => s.id === story.id ? updatedStory : s);
+        await AsyncStorage.setItem('local_stories', JSON.stringify(updated));
+      }
+
+      setStory(updatedStory);
+
+      // Award stardust for interactive adventure completion
+      await addStardust(15, 'Completed Interactive Adventure! 🌟', '🎯');
+      await incrementStoriesCompleted();
+
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      console.error('[Player] Branch generation failed:', err);
+      // Fallback: show quiet time anyway
+    } finally {
+      setIsGeneratingBranch(false);
+    }
+  }, [story, selectedChoiceIdx, isGeneratingBranch, choiceAScale, choiceAOpacity, choiceBScale, choiceBOpacity]);
+
+  // ── Choice timer effect ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (showChoiceCards) {
+      setChoiceTimerLeft(30);
+      choiceTimerRef.current = setInterval(() => {
+        setChoiceTimerLeft((prev) => {
+          if (prev <= 1) {
+            if (choiceTimerRef.current) {
+              clearInterval(choiceTimerRef.current);
+              choiceTimerRef.current = null;
+            }
+            // Auto-select first choice when timer expires
+            void handleChoiceSelect(0);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (choiceTimerRef.current) {
+        clearInterval(choiceTimerRef.current);
+        choiceTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (choiceTimerRef.current) {
+        clearInterval(choiceTimerRef.current);
+        choiceTimerRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showChoiceCards]);
 
   // ── Quiet Time Reflections ─────────────────────────────────────────────
   const startHeartbeatHaptics = useCallback(() => {
@@ -366,6 +509,26 @@ export default function PlayerScreen() {
       if (raw) {
         const questions = raw.trim().split('\n').filter((q) => q.trim().length > 0).slice(0, 3);
         setReflectionQuestions(questions);
+
+        // Award stardust for story completion
+        if (!story.isInteractive) {
+          await addStardust(10, `Completed "${story.title}"`, '📖');
+          await incrementStoriesCompleted();
+        }
+
+        // Save journal entry
+        const journalEntry: JournalEntry = {
+          id: `journal_${Date.now()}`,
+          date: new Date().toISOString(),
+          storyTitle: story.title,
+          childName: story.childName,
+          theme: story.theme,
+          answers: questions.map(q => ({ question: q, answer: '' })),
+          parentNotes: '',
+        };
+        const existingJournalRaw = await AsyncStorage.getItem(JOURNAL_KEY);
+        const existingJournal = existingJournalRaw ? JSON.parse(existingJournalRaw) : [];
+        await AsyncStorage.setItem(JOURNAL_KEY, JSON.stringify([journalEntry, ...existingJournal].slice(0, 100)));
       }
     } catch (err) {
       console.error('[QuietTime] Failed to generate reflections:', err);
@@ -444,6 +607,10 @@ export default function PlayerScreen() {
       if (progress >= 0.85 && !showQuietTimeBtn && !quietTimeActive) {
         setShowQuietTimeBtn(true);
       }
+      // Show choice cards for interactive stories
+      if (progress >= 0.85 && story?.isInteractive && !story?.branchContent && !showChoiceCards && !selectedChoiceIdx) {
+        setShowChoiceCards(true);
+      }
     }
   };
 
@@ -480,6 +647,16 @@ export default function PlayerScreen() {
       shadowRadius,
     };
   });
+
+  // Choice card animated styles
+  const choiceAStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: choiceAScale.value }],
+    opacity: choiceAOpacity.value,
+  }));
+  const choiceBStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: choiceBScale.value }],
+    opacity: choiceBOpacity.value,
+  }));
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render: Loading
@@ -660,6 +837,75 @@ export default function PlayerScreen() {
             <Text style={styles.storyText}>{story.content}</Text>
           </View>
         </Animated.View>
+
+        {/* ── Interactive Adventure Choice Cards ─────────────────────────── */}
+        {story.isInteractive && !story.branchContent && showChoiceCards && (
+          <View style={styles.choiceSection}>
+            <Text style={styles.choiceSectionTitle}>✨ The Adventure Awaits…</Text>
+            <Text style={styles.choiceSectionSubtitle}>What should {story.childName} do?</Text>
+
+            {/* Choice Timer */}
+            <View style={styles.choiceTimerRow}>
+              <View style={styles.choiceTimerBg}>
+                <Text style={styles.choiceTimerText}>{choiceTimerLeft}</Text>
+                <Text style={styles.choiceTimerSec}>sec</Text>
+              </View>
+            </View>
+
+            <View style={styles.choiceCards}>
+              {story.choiceOptions?.map((option, idx) => (
+                <Animated.View
+                  key={idx}
+                  style={[styles.choiceCardWrapper, idx === 0 ? choiceAStyle : choiceBStyle]}
+                >
+                  <TouchableOpacity
+                    style={styles.choiceCard}
+                    onPress={() => void handleChoiceSelect(idx)}
+                    onPressIn={() => {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <LinearGradient
+                      colors={idx === 0
+                        ? ['rgba(107,72,184,0.4)', 'rgba(107,72,184,0.15)']
+                        : ['rgba(255,140,66,0.4)', 'rgba(255,140,66,0.15)']}
+                      style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+                    />
+                    <Text style={styles.choiceCardEmoji}>{option.emoji}</Text>
+                    <Text style={styles.choiceCardLabel}>{option.label}</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Branch generating indicator */}
+        {isGeneratingBranch && (
+          <View style={styles.branchLoadingSection}>
+            <ActivityIndicator color={Colors.celestialGold} />
+            <Text style={styles.branchLoadingText}>{"Writing your story's ending\u2026"}</Text>
+          </View>
+        )}
+
+        {/* Branch content */}
+        {story.isInteractive && story.branchContent && (
+          <Animated.View style={[styles.storyCard, contentStyle, { marginTop: 0 }]}>
+            <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+            <LinearGradient
+              colors={['rgba(107,72,184,0.35)', 'rgba(13,14,36,0.5)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            <View style={styles.storyCardInner}>
+              <View style={styles.branchHeader}>
+                <Text style={styles.branchHeaderEmoji}>🌟</Text>
+                <Text style={styles.branchHeaderText}>Your Adventure Continues…</Text>
+              </View>
+              <Text style={styles.storyText}>{story.branchContent}</Text>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Decorative end-of-story stars */}
         <Animated.View style={[styles.endOfStory, contentStyle]}>
@@ -1336,5 +1582,104 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize:   14,
     color:      Colors.textMuted,
+  },
+
+  // ── Interactive Adventure Choice Cards
+  choiceSection: {
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  choiceSectionTitle: {
+    fontFamily: Fonts.black,
+    fontSize: 22,
+    color: Colors.moonlightCream,
+    textAlign: 'center',
+  },
+  choiceSectionSubtitle: {
+    fontFamily: Fonts.regular,
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  choiceTimerRow: {
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  choiceTimerBg: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 3,
+    borderColor: Colors.celestialGold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,215,0,0.1)',
+  },
+  choiceTimerText: {
+    fontFamily: Fonts.black,
+    fontSize: 22,
+    color: Colors.celestialGold,
+  },
+  choiceTimerSec: {
+    fontFamily: Fonts.bold,
+    fontSize: 10,
+    color: Colors.textMuted,
+    marginTop: -4,
+  },
+  choiceCards: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  choiceCardWrapper: {
+    flex: 1,
+  },
+  choiceCard: {
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    minHeight: 120,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  choiceCardEmoji: {
+    fontSize: 36,
+  },
+  choiceCardLabel: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 14,
+    color: Colors.moonlightCream,
+    textAlign: 'center',
+  },
+  branchLoadingSection: {
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingVertical: Spacing.xl,
+  },
+  branchLoadingText: {
+    fontFamily: Fonts.medium,
+    fontSize: 14,
+    color: Colors.textMuted,
+  },
+  branchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  branchHeaderEmoji: { fontSize: 20 },
+  branchHeaderText: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 15,
+    color: Colors.celestialGold,
   },
 });

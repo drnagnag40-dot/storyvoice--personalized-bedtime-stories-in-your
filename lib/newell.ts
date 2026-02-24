@@ -377,3 +377,151 @@ RULES:
 - Return ONLY the JSON array, no other text.
 `.trim();
 }
+
+// ──────────────────────────────────────────────────────────
+// Interactive Adventure Story builder
+// Generates 3 paragraphs + a choice point for branching stories
+// ──────────────────────────────────────────────────────────
+export interface ChoiceOption {
+  emoji: string;
+  label: string;
+  value: string;
+}
+
+export function buildInteractiveStoryPrompt(
+  input: StoryGenerationInput,
+  language?: string
+): string {
+  const { child, theme, narratorPersonality } = input;
+  const interests = child.interests.length > 0
+    ? `Their favourite themes are: ${child.interests.join(', ')}.`
+    : '';
+  const lifeNotes = child.life_notes
+    ? `Important things about them today: ${child.life_notes}.`
+    : '';
+  const ageText = child.age ? `${child.age}-year-old` : 'young';
+  const narratorGuide = narratorPersonality ? buildNarratorStyleGuide(narratorPersonality.style) : '';
+  const narratorIntro = narratorPersonality
+    ? `You are ${narratorPersonality.name} ${narratorPersonality.species}, narrating in the "${narratorPersonality.style}" style.`
+    : '';
+  const langNote = language && language !== 'en'
+    ? `IMPORTANT: Write the entire story in ${LANGUAGE_NAMES[language] ?? language}. The narrator character and their personality must be preserved, but the language must be ${LANGUAGE_NAMES[language] ?? language}.`
+    : '';
+
+  return `
+${narratorIntro}
+${langNote}
+Write the FIRST PART of an interactive bedtime adventure for a ${ageText} child named ${child.name}.
+${interests}
+${lifeNotes}
+${theme ? `Story theme: ${theme}.` : ''}
+
+STRUCTURE:
+- Write exactly 3 paragraphs. Each paragraph 2-3 sentences.
+- The story introduces the setting and main character.
+- Paragraph 3 ends at an exciting moment where the character must make a choice.
+- After paragraph 3, write exactly this format on a new line:
+
+[CHOICE_POINT]
+PATH_A_EMOJI: [single emoji]
+PATH_A_LABEL: [short choice label, 4-6 words]
+PATH_A_HINT: [one sentence describing this path]
+PATH_B_EMOJI: [single emoji]
+PATH_B_LABEL: [short choice label, 4-6 words]
+PATH_B_HINT: [one sentence describing this path]
+[/CHOICE_POINT]
+
+RULES:
+- Exactly 3 paragraphs before the choice point.
+- Both choices should be safe, calming, and lead to a good outcome.
+- Use simple, dreamy language.
+- The choice should feel magical and empowering.
+${narratorGuide}
+`.trim();
+}
+
+// ──────────────────────────────────────────────────────────
+// Story Branch continuation builder
+// Generates the conclusion after a child makes a choice
+// ──────────────────────────────────────────────────────────
+export function buildStoryBranchPrompt(
+  storyStart: string,
+  chosenPath: string,
+  childName: string,
+  narratorPersonality?: NarratorPersonality,
+  language?: string
+): string {
+  const narratorGuide = narratorPersonality ? buildNarratorStyleGuide(narratorPersonality.style) : '';
+  const narratorIntro = narratorPersonality
+    ? `You are ${narratorPersonality.name} ${narratorPersonality.species}.`
+    : '';
+  const langNote = language && language !== 'en'
+    ? `IMPORTANT: Write entirely in ${LANGUAGE_NAMES[language] ?? language}.`
+    : '';
+
+  return `
+${narratorIntro}
+${langNote}
+Continue and complete this bedtime story for ${childName}. The child chose: "${chosenPath}".
+
+Story so far:
+${storyStart.slice(0, 600)}
+
+STRUCTURE:
+- Write exactly 2 paragraphs as the story's conclusion.
+- Paragraph 1: The adventure continues based on the chosen path. Gentle, calming.
+- Paragraph 2: The SLEEPY ENDING. The character's eyes grow heavy, breathing slows, they drift peacefully to sleep. Use rhythmic, repetitive phrasing — soft pillows, warm blankets, fading starlight. End with one tender, very short sentence like a lullaby's last note.
+
+RULES:
+- Keep it warm, safe, and deeply soothing.
+- The ending must make ${childName} feel calm and ready to sleep.
+- Maximum 4 sentences per paragraph.
+${narratorGuide}
+`.trim();
+}
+
+// ──────────────────────────────────────────────────────────
+// Language translation builder
+// Translates story content while preserving narrator personality
+// ──────────────────────────────────────────────────────────
+export const SUPPORTED_LANGUAGES = [
+  { code: 'en', label: 'English', emoji: '🇬🇧', nativeName: 'English' },
+  { code: 'es', label: 'Spanish', emoji: '🇪🇸', nativeName: 'Español' },
+  { code: 'fr', label: 'French', emoji: '🇫🇷', nativeName: 'Français' },
+  { code: 'de', label: 'German', emoji: '🇩🇪', nativeName: 'Deutsch' },
+] as const;
+
+export type LanguageCode = 'en' | 'es' | 'fr' | 'de';
+
+export const LANGUAGE_NAMES: Record<string, string> = {
+  en: 'English',
+  es: 'Spanish (Español)',
+  fr: 'French (Français)',
+  de: 'German (Deutsch)',
+};
+
+export function buildTranslationPrompt(
+  content: string,
+  targetLanguage: LanguageCode,
+  narratorPersonality?: NarratorPersonality
+): string {
+  const narratorNote = narratorPersonality
+    ? `The text was originally narrated by ${narratorPersonality.name} ${narratorPersonality.species} in a "${narratorPersonality.style}" style. Preserve this personality and tone in the translation.`
+    : '';
+
+  return `
+Translate the following children's bedtime story into ${LANGUAGE_NAMES[targetLanguage]}.
+${narratorNote}
+
+RULES:
+- Maintain the warm, gentle, soothing tone appropriate for a bedtime story.
+- Preserve all paragraph breaks (blank lines between paragraphs).
+- Keep the magical, dreamy quality of the language.
+- Use child-appropriate vocabulary in ${LANGUAGE_NAMES[targetLanguage]}.
+- Do NOT translate any [CHOICE_POINT] markers — leave them exactly as-is.
+- Return ONLY the translated text, no explanations.
+
+TEXT TO TRANSLATE:
+${content}
+`.trim();
+}

@@ -32,8 +32,9 @@ import PolaroidReveal from '@/components/PolaroidReveal';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { generateText, generateImage, useImageTransform } from '@fastshot/ai';
 import { getChildren, createStory, isSupabaseAvailable, upsertUserPreferences } from '@/lib/supabase';
-import { buildStoryPrompt, buildImagePrompt, NARRATOR_PERSONALITIES, STORY_ART_STYLES, type NarratorPersonality, type ArtStyle } from '@/lib/newell';
+import { buildStoryPrompt, buildImagePrompt, buildInteractiveStoryPrompt, NARRATOR_PERSONALITIES, STORY_ART_STYLES, type NarratorPersonality, type ArtStyle, type ChoiceOption } from '@/lib/newell';
 import type { Child } from '@/lib/supabase';
+import { useAdapty } from '@/hooks/useAdapty';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Theme definitions
@@ -178,6 +179,7 @@ export default function CreateStoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user }  = useAuth();
+  const { isPremium, openPaywall } = useAdapty();
 
   const [child,          setChild]          = useState<Child | null>(null);
   const [selectedTheme,  setSelectedTheme]  = useState<string | null>(null);
@@ -192,6 +194,9 @@ export default function CreateStoryScreen() {
   const [transformedPortrait,  setTransformedPortrait]  = useState<string | null>(null);
   const [isTransformingPhoto,  setIsTransformingPhoto]  = useState(false);
   const [transformStep,        setTransformStep]        = useState('');
+
+  const [isInteractiveMode, setIsInteractiveMode] = useState(false);
+  const [appLanguage, setAppLanguage] = useState('en');
 
   // Image transform hook
   const { transformImage } = useImageTransform();
@@ -228,6 +233,13 @@ export default function CreateStoryScreen() {
         const narrator = NARRATOR_PERSONALITIES.find((n) => n.id === narratorId);
         setNarratorPersonality(narrator ?? null);
       }
+    } catch {
+      // non-fatal
+    }
+    // Load app language
+    try {
+      const lang = await AsyncStorage.getItem('app_language');
+      if (lang) setAppLanguage(lang);
     } catch {
       // non-fatal
     }
@@ -322,6 +334,33 @@ export default function CreateStoryScreen() {
     }
   };
 
+  // ── Parse choice point from interactive story response ────────────────
+  function parseChoicePoint(rawText: string): {
+    storyContent: string;
+    choiceOptions: ChoiceOption[];
+  } {
+    const choiceMatch = rawText.match(/\[CHOICE_POINT\]([\s\S]*?)\[\/CHOICE_POINT\]/);
+    if (!choiceMatch) return { storyContent: rawText, choiceOptions: [] };
+
+    const choiceBlock = choiceMatch[1];
+    const storyContent = rawText.replace(choiceMatch[0], '').trim();
+
+    const pathAEmoji = choiceBlock.match(/PATH_A_EMOJI:\s*(.+)/)?.[1]?.trim() ?? '🌟';
+    const pathALabel = choiceBlock.match(/PATH_A_LABEL:\s*(.+)/)?.[1]?.trim() ?? 'Follow the magic path';
+    const pathAHint  = choiceBlock.match(/PATH_A_HINT:\s*(.+)/)?.[1]?.trim() ?? pathALabel;
+    const pathBEmoji = choiceBlock.match(/PATH_B_EMOJI:\s*(.+)/)?.[1]?.trim() ?? '🏠';
+    const pathBLabel = choiceBlock.match(/PATH_B_LABEL:\s*(.+)/)?.[1]?.trim() ?? 'Return home to rest';
+    const pathBHint  = choiceBlock.match(/PATH_B_HINT:\s*(.+)/)?.[1]?.trim() ?? pathBLabel;
+
+    return {
+      storyContent,
+      choiceOptions: [
+        { emoji: pathAEmoji, label: pathALabel, value: pathAHint },
+        { emoji: pathBEmoji, label: pathBLabel, value: pathBHint },
+      ],
+    };
+  }
+
   // ── Generate handler ───────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!selectedTheme) {
@@ -348,19 +387,37 @@ export default function CreateStoryScreen() {
 
     try {
       // ── Step 1: Generate story text via Newell AI ───────────────────
-      const storyPrompt = buildStoryPrompt({
-        child,
-        voiceType: 'mom',
-        theme:     themeObj?.label,
-        mood:      selectedTheme === 'calming' ? 'very soothing and sleep-inducing' : undefined,
-        narratorPersonality: narratorPersonality ?? undefined,
-      });
+      let storyText: string;
+      let choiceOptions: ChoiceOption[] = [];
 
-      const rawText = await generateText({ prompt: storyPrompt });
-      if (!rawText || rawText.trim().length === 0) {
-        throw new Error('AI returned an empty story. Please try again.');
+      if (isInteractiveMode) {
+        const interactivePrompt = buildInteractiveStoryPrompt({
+          child,
+          voiceType: 'mom',
+          theme:     themeObj?.label,
+          narratorPersonality: narratorPersonality ?? undefined,
+        }, appLanguage !== 'en' ? appLanguage : undefined);
+        const rawText = await generateText({ prompt: interactivePrompt });
+        if (!rawText || rawText.trim().length === 0) {
+          throw new Error('AI returned an empty story. Please try again.');
+        }
+        const parsed = parseChoicePoint(rawText.trim());
+        storyText = parsed.storyContent;
+        choiceOptions = parsed.choiceOptions;
+      } else {
+        const storyPrompt = buildStoryPrompt({
+          child,
+          voiceType: 'mom',
+          theme:     themeObj?.label,
+          mood:      selectedTheme === 'calming' ? 'very soothing and sleep-inducing' : undefined,
+          narratorPersonality: narratorPersonality ?? undefined,
+        });
+        const rawText = await generateText({ prompt: storyPrompt });
+        if (!rawText || rawText.trim().length === 0) {
+          throw new Error('AI returned an empty story. Please try again.');
+        }
+        storyText = rawText.trim();
       }
-      const storyText = rawText.trim();
 
       setGenerationStep('Weaving the magic words…');
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -420,6 +477,9 @@ export default function CreateStoryScreen() {
         theme:       themeObj?.label ?? selectedTheme,
         createdAt:   new Date().toISOString(),
         is_favorite: false,
+        isInteractive: isInteractiveMode,
+        choiceOptions: choiceOptions.length > 0 ? choiceOptions : undefined,
+        branchContent: null,
         hasFamilyPortrait: Boolean(transformedPortrait),
         artStyleLabel: selectedArtStyle?.label,
       };
@@ -679,6 +739,43 @@ export default function CreateStoryScreen() {
               )}
             </View>
           )}
+
+          {/* ── Interactive Adventures (Pro Feature) ───────────────── */}
+          <TouchableOpacity
+            style={[styles.portraitToggleBtn, isInteractiveMode && styles.interactiveActiveBtn]}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (!isPremium && !isInteractiveMode) {
+                // Gate with paywall
+                void openPaywall();
+                return;
+              }
+              setIsInteractiveMode(!isInteractiveMode);
+            }}
+            disabled={isGenerating}
+            activeOpacity={0.82}
+          >
+            <LinearGradient
+              colors={isInteractiveMode
+                ? ['rgba(107,72,184,0.35)', 'rgba(107,72,184,0.12)']
+                : ['rgba(255,215,0,0.12)', 'rgba(255,215,0,0.04)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            <View style={styles.portraitToggleLeft}>
+              <Text style={styles.portraitToggleEmoji}>🗺️</Text>
+              <View>
+                <Text style={[styles.portraitToggleLabel, isInteractiveMode && { color: '#C9A8FF' }]}>
+                  Interactive Adventure
+                </Text>
+                <Text style={styles.portraitToggleSubLabel}>
+                  {isInteractiveMode ? '✓ Child chooses the story path!' : 'Let your child choose the story path ✨'}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.portraitProBadge, isInteractiveMode && { backgroundColor: 'rgba(107,72,184,0.4)' }]}>
+              <Text style={styles.portraitProText}>{isInteractiveMode ? 'ON' : 'PRO'}</Text>
+            </View>
+          </TouchableOpacity>
 
           {/* ── Theme selection ───────────────────────────────────────── */}
           <Text style={styles.sectionTitle}>Choose a Theme</Text>
@@ -1073,6 +1170,10 @@ const styles = StyleSheet.create({
   },
   portraitProText: { fontFamily: Fonts.black, fontSize: 9, color: Colors.deepSpace },
   portraitToggleChevron: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.textMuted },
+  interactiveActiveBtn: {
+    borderColor: 'rgba(107,72,184,0.5)',
+    borderWidth: 1.5,
+  },
 
   portraitSection: {
     backgroundColor: Colors.cardBg,

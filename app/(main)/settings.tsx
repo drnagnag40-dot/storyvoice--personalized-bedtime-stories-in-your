@@ -40,6 +40,7 @@ import {
   isMigrationComplete,
   getMigrationTimestamp,
 } from '@/lib/migrationService';
+import { SUPPORTED_LANGUAGES, type LanguageCode } from '@/lib/newell';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SettingRow {
@@ -292,6 +293,8 @@ export default function SettingsScreen() {
   });
   const [isSyncing,          setIsSyncing]          = useState(false);
   const [migrationComplete,  setMigrationComplete]  = useState(false);
+  const [appLanguage,        setAppLanguage]        = useState<LanguageCode>('en');
+  const [isChangingLanguage, setIsChangingLanguage] = useState(false);
 
   // Interval to refresh the sync label ("5m ago" → "6m ago")
   const labelRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -302,6 +305,8 @@ export default function SettingsScreen() {
   const profileOpacity = useSharedValue(0);
   const profileTransY = useSharedValue(16);
   const versionOpacity = useSharedValue(0);
+  const langFlipAnim   = useSharedValue(0); // 0 → 1 flip
+  const langShimmer    = useSharedValue(0);
 
   useEffect(() => {
     headerOpacity.value = withTiming(1, { duration: 600 });
@@ -344,6 +349,8 @@ export default function SettingsScreen() {
           if (ts) setMigrationComplete(true);
         }
       }
+      const savedLang = await AsyncStorage.getItem('app_language');
+      if (savedLang) setAppLanguage(savedLang as LanguageCode);
     } catch {
       // ignore
     }
@@ -361,6 +368,17 @@ export default function SettingsScreen() {
 
   const versionStyle = useAnimatedStyle(() => ({
     opacity: versionOpacity.value,
+  }));
+
+  const langCardFlipStyle = useAnimatedStyle(() => {
+    const rotateY = `${langFlipAnim.value * 90}deg`;
+    return {
+      transform: [{ perspective: 600 }, { rotateY }],
+    };
+  });
+
+  const langShimmerStyle = useAnimatedStyle(() => ({
+    opacity: langShimmer.value * 0.6,
   }));
 
   // User display data
@@ -496,6 +514,33 @@ export default function SettingsScreen() {
     }
   }, [user?.id]);
 
+  // ── Language Change ───────────────────────────────────────────────────────────
+  const handleLanguageChange = useCallback(async (code: LanguageCode) => {
+    if (code === appLanguage) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsChangingLanguage(true);
+
+    // Flip animation: rotate to 90° (edge), change language, rotate back to 0°
+    langFlipAnim.value = withTiming(1, { duration: 280, easing: Easing.inOut(Easing.quad) }, () => {
+      // Language has "flipped" — change it at the midpoint
+      langFlipAnim.value = withTiming(0, { duration: 280, easing: Easing.inOut(Easing.quad) });
+    });
+
+    // Shimmer effect
+    langShimmer.value = withSequence(
+      withTiming(1, { duration: 350 }),
+      withTiming(0, { duration: 500 }),
+    );
+
+    // Update state after brief delay for animation
+    setTimeout(async () => {
+      setAppLanguage(code);
+      await AsyncStorage.setItem('app_language', code);
+      setIsChangingLanguage(false);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }, 280);
+  }, [appLanguage, langFlipAnim, langShimmer]);
+
   // ── Section configs ───────────────────────────────────────────────────────────
   const appRows: SettingRow[] = [
     {
@@ -541,6 +586,20 @@ export default function SettingsScreen() {
       value: "Milestones & growth themes",
       chevron: true,
       onPress: () => router.push('/(main)/milestone-book'),
+    },
+    {
+      icon: '📓',
+      label: 'Bedtime Journal',
+      value: "View child's reflection answers",
+      chevron: true,
+      onPress: () => router.push('/(main)/bedtime-journal'),
+    },
+    {
+      icon: '⭐',
+      label: 'Stardust Shop',
+      value: 'Unlock magic dust & badges',
+      chevron: true,
+      onPress: () => router.push('/(main)/stardust-shop'),
     },
   ];
 
@@ -660,6 +719,50 @@ export default function SettingsScreen() {
           />
         )}
 
+        {/* Language Selector */}
+        <Animated.View style={[styles.section, { opacity: 1 }]}>
+          <Text style={styles.sectionTitle}>🌍  Story Language</Text>
+          <Animated.View style={[styles.langCard, langCardFlipStyle]}>
+            {Platform.OS === 'ios' && (
+              <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
+            )}
+            {/* Shimmer overlay */}
+            <Animated.View style={[StyleSheet.absoluteFill, styles.langShimmerOverlay, langShimmerStyle]} />
+
+            <Text style={styles.langCardTitle}>Narration Language</Text>
+            <Text style={styles.langCardSubtitle}>Stories & narration will be generated in your chosen language</Text>
+
+            <View style={styles.langOptions}>
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <TouchableOpacity
+                  key={lang.code}
+                  style={[
+                    styles.langOption,
+                    appLanguage === lang.code && styles.langOptionSelected,
+                  ]}
+                  onPress={() => void handleLanguageChange(lang.code as LanguageCode)}
+                  disabled={isChangingLanguage}
+                  activeOpacity={0.8}
+                >
+                  {appLanguage === lang.code && (
+                    <LinearGradient
+                      colors={['rgba(255,215,0,0.2)', 'rgba(255,215,0,0.06)']}
+                      style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+                    />
+                  )}
+                  <Text style={styles.langEmoji}>{lang.emoji}</Text>
+                  <Text style={[styles.langLabel, appLanguage === lang.code && styles.langLabelSelected]}>
+                    {lang.nativeName}
+                  </Text>
+                  {appLanguage === lang.code && (
+                    <Text style={styles.langCheck}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Animated.View>
+        </Animated.View>
+
         {/* App Settings Section */}
         <Section title="App Settings" items={appRows} delay={200} />
 
@@ -671,7 +774,7 @@ export default function SettingsScreen() {
 
         {/* App version */}
         <Animated.View style={[versionStyle, styles.versionRow]}>
-          <Text style={styles.versionText}>StoryVoice · Phase 5 · v5.0</Text>
+          <Text style={styles.versionText}>StoryVoice · Phase 6 · v6.0</Text>
           <Text style={styles.versionSubText}>Made with 🌙 for sleepy little ones</Text>
         </Animated.View>
       </ScrollView>
@@ -958,4 +1061,71 @@ const styles = StyleSheet.create({
   versionRow: { alignItems: 'center', marginTop: Spacing.sm, paddingVertical: Spacing.sm },
   versionText: { fontFamily: Fonts.medium, fontSize: 12, color: Colors.textMuted },
   versionSubText: { fontFamily: Fonts.regular, fontSize: 11, color: 'rgba(153,153,187,0.5)', marginTop: 4 },
+
+  // Language Selector
+  langCard: {
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(13,14,36,0.7)' : 'rgba(26,27,65,0.92)',
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.15)',
+    overflow: 'hidden',
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    shadowColor: Colors.celestialGold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  langShimmerOverlay: {
+    backgroundColor: 'rgba(255,215,0,0.15)',
+    pointerEvents: 'none' as const,
+  },
+  langCardTitle: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 14,
+    color: Colors.moonlightCream,
+  },
+  langCardSubtitle: {
+    fontFamily: Fonts.regular,
+    fontSize: 11,
+    color: Colors.textMuted,
+    lineHeight: 16,
+    marginBottom: Spacing.sm,
+  },
+  langOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  langOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderColor,
+    backgroundColor: Colors.cardBg,
+    overflow: 'hidden',
+  },
+  langOptionSelected: {
+    borderColor: 'rgba(255,215,0,0.5)',
+  },
+  langEmoji: { fontSize: 18 },
+  langLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+  langLabelSelected: {
+    color: Colors.celestialGold,
+  },
+  langCheck: {
+    fontFamily: Fonts.bold,
+    fontSize: 12,
+    color: Colors.celestialGold,
+    marginLeft: 2,
+  },
 });
