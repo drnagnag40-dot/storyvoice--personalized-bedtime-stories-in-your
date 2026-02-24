@@ -215,10 +215,21 @@ export async function getParentVoices(userId: string) {
 //   content     TEXT,
 //   image_url   TEXT,
 //   theme       TEXT,
+//   is_favorite BOOLEAN     NOT NULL DEFAULT FALSE,
 //   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 // );
 // ALTER TABLE stories ENABLE ROW LEVEL SECURITY;
 // CREATE POLICY "Users manage own stories" ON stories
+//   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+//
+// -- User preferences (active voice, etc.)
+// CREATE TABLE user_preferences (
+//   user_id        UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+//   active_voice_id TEXT,
+//   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+// );
+// ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
+// CREATE POLICY "Users manage own preferences" ON user_preferences
 //   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 // ──────────────────────────────────────────────────────────
 
@@ -230,7 +241,14 @@ export interface Story {
   content: string | null;
   image_url: string | null;
   theme: string | null;
+  is_favorite: boolean;
   created_at: string;
+}
+
+export interface UserPreferences {
+  user_id: string;
+  active_voice_id: string | null;
+  updated_at: string;
 }
 
 export async function createStory(data: Omit<Story, 'id' | 'created_at'>) {
@@ -277,4 +295,47 @@ export async function updateStory(id: string, data: Partial<Omit<Story, 'id' | '
     .select()
     .single();
   return { story: story as Story | null, error };
+}
+
+export async function toggleStoryFavorite(id: string, isFavorite: boolean) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] toggleStoryFavorite skipped – Supabase not configured.');
+    return { error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { error } = await supabase
+    .from('stories')
+    .update({ is_favorite: isFavorite })
+    .eq('id', id);
+  return { error };
+}
+
+// ──────────────────────────────────────────────────────────
+// User Preferences
+// ──────────────────────────────────────────────────────────
+
+export async function upsertUserPreferences(
+  userId: string,
+  prefs: Partial<Omit<UserPreferences, 'user_id' | 'updated_at'>>
+) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] upsertUserPreferences skipped – Supabase not configured.');
+    return { error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { error } = await supabase
+    .from('user_preferences')
+    .upsert({ user_id: userId, ...prefs, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  return { error };
+}
+
+export async function getUserPreferences(userId: string) {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] getUserPreferences skipped – Supabase not configured.');
+    return { preferences: null, error: SUPABASE_NOT_CONFIGURED_ERROR };
+  }
+  const { data, error } = await supabase
+    .from('user_preferences')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+  return { preferences: data as UserPreferences | null, error };
 }

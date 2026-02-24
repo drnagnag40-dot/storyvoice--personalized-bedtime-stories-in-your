@@ -30,6 +30,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -37,6 +38,7 @@ import Animated, {
   withRepeat,
   withSequence,
   withDelay,
+  withSpring,
   Easing,
   cancelAnimation,
   interpolate,
@@ -44,6 +46,7 @@ import Animated, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
+import { toggleStoryFavorite, isSupabaseAvailable } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -56,6 +59,7 @@ interface CurrentStory {
   childName: string;
   theme: string;
   createdAt: string;
+  is_favorite?: boolean;
 }
 
 const SLEEP_TIMER_OPTIONS = [
@@ -107,6 +111,10 @@ export default function PlayerScreen() {
   const [story,            setStory]            = useState<CurrentStory | null>(null);
   const [isLoading,        setIsLoading]        = useState(true);
   const [error,            setError]            = useState<string | null>(null);
+  const [isFavorite,       setIsFavorite]       = useState(false);
+
+  // Heart animation
+  const heartScale = useSharedValue(1);
 
   // Sleep timer state
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState(0);
@@ -145,6 +153,7 @@ export default function PlayerScreen() {
         return;
       }
       setStory(parsed);
+      setIsFavorite(parsed.is_favorite ?? false);
     } catch (e) {
       console.error('[Player] Failed to load story from AsyncStorage:', e);
       setError('Failed to load story. Please try again.');
@@ -235,10 +244,48 @@ export default function PlayerScreen() {
   }, []);
 
   const handleTimerSelect = useCallback((minutes: number) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSleepTimerMinutes(minutes);
     setShowTimerModal(false);
     startSleepTimer(minutes);
   }, [startSleepTimer]);
+
+  // ── Favourite toggle ───────────────────────────────────────────────────────
+  const handleToggleFavorite = useCallback(async () => {
+    if (!story) return;
+    const newVal = !isFavorite;
+    setIsFavorite(newVal);
+
+    // Bounce animation
+    heartScale.value = withSpring(1.4, { damping: 4, stiffness: 300 }, () => {
+      heartScale.value = withSpring(1, { damping: 8, stiffness: 200 });
+    });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Persist to AsyncStorage
+    const raw = await AsyncStorage.getItem('current_story');
+    if (raw) {
+      const current = JSON.parse(raw) as CurrentStory;
+      await AsyncStorage.setItem('current_story', JSON.stringify({ ...current, is_favorite: newVal }));
+    }
+    // Sync local_stories cache
+    const localRaw = await AsyncStorage.getItem('local_stories');
+    if (localRaw && story.id) {
+      const localStories = (JSON.parse(localRaw) as CurrentStory[]).map((s) =>
+        s.id === story.id ? { ...s, is_favorite: newVal } : s
+      );
+      await AsyncStorage.setItem('local_stories', JSON.stringify(localStories));
+    }
+    // Sync to Supabase
+    if (isSupabaseAvailable && story.id) {
+      await toggleStoryFavorite(story.id, newVal);
+    }
+  }, [story, isFavorite, heartScale]);
+
+  // ── Heart animated style ───────────────────────────────────────────────────
+  const heartStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: heartScale.value }],
+  }));
 
   // ── Formatted timer display ────────────────────────────────────────────────
   const formatTimer = (seconds: number) => {
@@ -344,7 +391,13 @@ export default function PlayerScreen() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <Animated.View style={[styles.header, { paddingTop: insets.top + 12 }, headerStyle]}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+        >
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
 
@@ -353,16 +406,31 @@ export default function PlayerScreen() {
           <Text style={styles.headerChild}>for {story.childName} ✨</Text>
         </View>
 
-        {/* Sleep timer button */}
-        <TouchableOpacity
-          style={[styles.timerButton, timerActive && styles.timerButtonActive]}
-          onPress={() => setShowTimerModal(true)}
-        >
-          <Text style={styles.timerIcon}>⏱</Text>
-          {timerActive && (
-            <Text style={styles.timerCountdown}>{formatTimer(sleepSecondsLeft)}</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {/* Favourite button */}
+          <TouchableOpacity
+            style={styles.headerActionBtn}
+            onPress={() => void handleToggleFavorite()}
+          >
+            <Animated.Text style={[styles.headerActionIcon, heartStyle]}>
+              {isFavorite ? '❤️' : '🤍'}
+            </Animated.Text>
+          </TouchableOpacity>
+
+          {/* Sleep timer button */}
+          <TouchableOpacity
+            style={[styles.timerButton, timerActive && styles.timerButtonActive]}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowTimerModal(true);
+            }}
+          >
+            <Text style={styles.timerIcon}>⏱</Text>
+            {timerActive && (
+              <Text style={styles.timerCountdown}>{formatTimer(sleepSecondsLeft)}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </Animated.View>
 
       {/* ── Main scroll content ─────────────────────────────────────────────── */}
@@ -441,7 +509,10 @@ export default function PlayerScreen() {
           {/* Back to bookshelf */}
           <TouchableOpacity
             style={styles.controlBtn}
-            onPress={() => router.replace('/(main)/home')}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.replace('/(main)/home');
+            }}
           >
             <Text style={styles.controlBtnIcon}>🏠</Text>
             <Text style={styles.controlBtnLabel}>Home</Text>
@@ -450,7 +521,10 @@ export default function PlayerScreen() {
           {/* Create new story */}
           <TouchableOpacity
             style={[styles.controlBtnPrimary]}
-            onPress={() => router.replace('/(main)/create-story')}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.replace('/(main)/create-story');
+            }}
           >
             <LinearGradient
               colors={[Colors.celestialGold, Colors.softGold]}
@@ -465,7 +539,10 @@ export default function PlayerScreen() {
           {/* Sleep timer toggle */}
           <TouchableOpacity
             style={[styles.controlBtn, timerActive && styles.controlBtnTimerActive]}
-            onPress={timerActive ? clearSleepTimer : () => setShowTimerModal(true)}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (timerActive) clearSleepTimer(); else setShowTimerModal(true);
+            }}
           >
             <Text style={styles.controlBtnIcon}>{timerActive ? '⏹' : '⏱'}</Text>
             <Text style={styles.controlBtnLabel}>
@@ -599,6 +676,23 @@ const styles = StyleSheet.create({
   headerCenter: { alignItems: 'center', flex: 1, marginHorizontal: Spacing.sm },
   headerLabel:  { fontFamily: Fonts.bold,      fontSize: 13, color: Colors.textMuted },
   headerChild:  { fontFamily: Fonts.extraBold, fontSize: 16, color: Colors.moonlightCream },
+
+  headerActions: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             8,
+  },
+  headerActionBtn: {
+    width:           44,
+    height:          44,
+    borderRadius:    22,
+    backgroundColor: 'rgba(37,38,85,0.7)',
+    alignItems:      'center',
+    justifyContent:  'center',
+    borderWidth:     1,
+    borderColor:     Colors.borderColor,
+  },
+  headerActionIcon: { fontSize: 20 },
 
   timerButton: {
     flexDirection:   'row',

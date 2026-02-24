@@ -24,6 +24,7 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import WarpStarField from '@/components/WarpStarField';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { generateText, generateImage } from '@fastshot/ai';
@@ -247,11 +248,12 @@ export default function CreateStoryScreen() {
     const themeObj = STORY_THEMES.find((t) => t.id === selectedTheme);
     const storyTitle = `A ${themeObj?.label ?? 'Magical'} Story for ${child.name}`;
 
-    // Button press bounce
+    // Button press bounce + haptic
     buttonScale.value = withSequence(
       withTiming(0.94, { duration: 100 }),
       withTiming(1,    { duration: 150 })
     );
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
     setIsGenerating(true);
     setGenerationStep('Gathering the stardust…');
@@ -296,12 +298,13 @@ export default function CreateStoryScreen() {
       if (user?.id && child?.id && isSupabaseAvailable) {
         try {
           const { story: savedStory } = await createStory({
-            user_id:   user.id,
-            child_id:  child.id,
-            title:     storyTitle,
-            content:   storyText,
-            image_url: imageUrl,
-            theme:     themeObj?.label ?? selectedTheme,
+            user_id:     user.id,
+            child_id:    child.id,
+            title:       storyTitle,
+            content:     storyText,
+            image_url:   imageUrl,
+            theme:       themeObj?.label ?? selectedTheme,
+            is_favorite: false,
           });
           savedStoryId = savedStory?.id ?? null;
         } catch (dbErr) {
@@ -311,13 +314,14 @@ export default function CreateStoryScreen() {
 
       // ── Step 4: Persist story for the player via AsyncStorage ────────
       const storyEntry = {
-        id:        savedStoryId ?? `local_${Date.now()}`,
-        title:     storyTitle,
-        content:   storyText,
+        id:          savedStoryId ?? `local_${Date.now()}`,
+        title:       storyTitle,
+        content:     storyText,
         imageUrl,
-        childName: child.name,
-        theme:     themeObj?.label ?? selectedTheme,
-        createdAt: new Date().toISOString(),
+        childName:   child.name,
+        theme:       themeObj?.label ?? selectedTheme,
+        createdAt:   new Date().toISOString(),
+        is_favorite: false,
       };
 
       await AsyncStorage.setItem('current_story', JSON.stringify(storyEntry));
