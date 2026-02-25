@@ -304,21 +304,27 @@ const socialStyles = StyleSheet.create({
 });
 
 // ─── Error message helpers ────────────────────────────────────────────────────
-function getFriendlyErrorMessage(err: unknown): string {
+function getFriendlyErrorMessage(err: unknown, context?: 'signin' | 'signup'): string {
   // Handle plain AuthError objects from @fastshot/auth  { type, message }
   if (err !== null && typeof err === 'object' && !Array.isArray(err)) {
     const obj = err as Record<string, unknown>;
     // NETWORK_ERROR type is a reliable signal
     if (obj['type'] === 'NETWORK_ERROR') {
+      if (context === 'signup') {
+        return 'An internet connection is required to create your account. Please check your connection and try again.';
+      }
+      if (context === 'signin') {
+        return 'An internet connection is required to access your account. Please check your connection and try again.';
+      }
       return 'Unable to connect. Please check your internet connection and try again.';
     }
     // Extract message string from the object
     if (typeof obj['message'] === 'string') {
-      return getFriendlyErrorMessage(obj['message']);
+      return getFriendlyErrorMessage(obj['message'], context);
     }
     // Try originalError as fallback
     if (obj['originalError']) {
-      return getFriendlyErrorMessage(obj['originalError']);
+      return getFriendlyErrorMessage(obj['originalError'], context);
     }
     return 'Something went wrong. Please try again.';
   }
@@ -326,6 +332,22 @@ function getFriendlyErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err ?? '');
 
   if (!raw) return 'Something went wrong. Please try again.';
+
+  // If the raw value looks like JSON, try to extract a meaningful detail from it
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const detail = typeof parsed['detail'] === 'string' ? parsed['detail'] : '';
+      const msg = typeof parsed['message'] === 'string' ? parsed['message'] : '';
+      const extracted = detail || msg;
+      if (extracted) {
+        return getFriendlyErrorMessage(extracted, context);
+      }
+    } catch {
+      // Not valid JSON – fall through to string matching below
+    }
+  }
 
   const lower = raw.toLowerCase();
 
@@ -341,7 +363,22 @@ function getFriendlyErrorMessage(err: unknown): string {
     lower.includes('no internet') ||
     (lower.includes('network') && lower.includes('error'))
   ) {
+    if (context === 'signup') {
+      return 'An internet connection is required to create your account. Please check your connection and try again.';
+    }
+    if (context === 'signin') {
+      return 'An internet connection is required to access your account. Please check your connection and try again.';
+    }
     return 'Unable to connect. Please check your internet connection and try again.';
+  }
+
+  // Tenant / backend configuration errors (e.g. Google OAuth misconfiguration)
+  if (
+    lower.includes('tenant not found') ||
+    lower.includes('managed supabase backend') ||
+    lower.includes('does not have a managed')
+  ) {
+    return 'Sign-in is temporarily unavailable. Please try again later or contact support.';
   }
 
   // Already-registered
@@ -371,6 +408,11 @@ function getFriendlyErrorMessage(err: unknown): string {
   // Suppress internal placeholder / supabase endpoint leakage
   if (lower.includes('placeholder.supabase') || lower.includes('placeholder-anon-key')) {
     return 'Authentication service is not configured. Please contact support.';
+  }
+
+  // Suppress any remaining raw JSON blobs from leaking to the user
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return 'Something went wrong. Please try again.';
   }
 
   // Fall back to the original message if it looks user-readable
@@ -474,7 +516,7 @@ export default function SignInScreen() {
       await signInWithEmail(email.trim(), password);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      setLocalError(getFriendlyErrorMessage(err));
+      setLocalError(getFriendlyErrorMessage(err, 'signin'));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
@@ -500,7 +542,7 @@ export default function SignInScreen() {
       await signUpWithEmail(email.trim(), password);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      setLocalError(getFriendlyErrorMessage(err));
+      setLocalError(getFriendlyErrorMessage(err, 'signup'));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
@@ -511,7 +553,7 @@ export default function SignInScreen() {
   const displayError =
     localError ||
     (rawAuthError ? getFriendlyErrorMessage(rawAuthError) : '') ||
-    (params.error ? decodeURIComponent(params.error) : '');
+    (params.error ? getFriendlyErrorMessage(decodeURIComponent(params.error)) : '');
 
   // ── Email verification pending ────────────────────────────────────────────────
   if (pendingEmailVerification) {
