@@ -20,10 +20,12 @@ import Animated, {
   withTiming,
   withSpring,
   withSequence,
+  withRepeat,
   withDelay,
   Easing,
   interpolate,
   Extrapolation,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
@@ -80,16 +82,32 @@ export default function PolaroidReveal({
       // 4. Shimmer sweep across the photo once developed
       shimmerX.value = withDelay(1800, withTiming(width + 60, { duration: 800, easing: Easing.out(Easing.quad) }));
 
-      // 5. Subtle glow pulse on the Polaroid border
+      // 5. Initial punchy glow flash, then settle into a soft continuous dreamlike pulse
       glowPulse.value = withDelay(2600,
         withSequence(
-          withTiming(1, { duration: 700, easing: Easing.out(Easing.sin) }),
-          withTiming(0.4, { duration: 700, easing: Easing.in(Easing.sin) }),
-          withTiming(1, { duration: 500, easing: Easing.out(Easing.sin) }),
-          withTiming(0, { duration: 500 })
+          withTiming(1,   { duration: 600, easing: Easing.out(Easing.sin) }),
+          withTiming(0.5, { duration: 500, easing: Easing.in(Easing.sin) }),
+          withTiming(0.85,{ duration: 400, easing: Easing.out(Easing.sin) }),
+          // After the flash, breathe softly and continuously
+          withRepeat(
+            withSequence(
+              withTiming(0.75, { duration: 2200, easing: Easing.inOut(Easing.sin) }),
+              withTiming(0.25, { duration: 2200, easing: Easing.inOut(Easing.sin) }),
+            ),
+            -1,
+            false
+          )
         )
       );
     }
+
+    // Clean up glow animation when image is removed
+    return () => {
+      if (!imageUri) {
+        cancelAnimation(glowPulse);
+        glowPulse.value = 0;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUri, isTransforming]);
 
@@ -176,26 +194,34 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   polaroidFrame: {
-    backgroundColor: '#FFFEF0',
+    backgroundColor: 'rgba(255, 253, 240, 0.96)',
     borderRadius: 4,
     padding: 12,
     paddingBottom: 20,
     alignItems: 'center',
-    // Slight imperfect Polaroid border
+    // Soft reflective Polaroid border
     borderWidth: 1,
-    borderColor: '#E8E4D0',
+    borderColor: 'rgba(255, 240, 180, 0.85)',
+    // Top highlight to reinforce frosted glass feel
+    shadowColor: 'rgba(255, 220, 100, 0.5)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
   },
   photoArea: {
     borderRadius: 2,
     overflow: 'hidden',
-    backgroundColor: '#F0EDE0',
+    backgroundColor: '#E8E4D8',
+    // Perfectly centred — resizeMode="cover" on Image handles focal centering
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   photo: {
     width: '100%',
     height: '100%',
   },
   developOverlay: {
-    backgroundColor: '#FFFEF7',
+    backgroundColor: 'rgba(255, 253, 240, 0.97)',
     borderRadius: 2,
   },
   shimmerStripe: {

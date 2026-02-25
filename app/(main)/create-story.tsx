@@ -414,7 +414,7 @@ export default function CreateStoryScreen() {
           theme:     themeObj?.label,
           narratorPersonality: narratorPersonality ?? undefined,
         }, appLanguage !== 'en' ? appLanguage : undefined);
-        const rawText = await generateText({ prompt: interactivePrompt });
+        const rawText = await generateText({ prompt: interactivePrompt, temperature: 0.75 });
         if (!rawText || rawText.trim().length === 0) {
           throw new Error('AI returned an empty story. Please try again.');
         }
@@ -429,7 +429,7 @@ export default function CreateStoryScreen() {
           mood:      selectedTheme === 'calming' ? 'very soothing and sleep-inducing' : undefined,
           narratorPersonality: narratorPersonality ?? undefined,
         });
-        const rawText = await generateText({ prompt: storyPrompt });
+        const rawText = await generateText({ prompt: storyPrompt, temperature: 0.75 });
         if (!rawText || rawText.trim().length === 0) {
           throw new Error('AI returned an empty story. Please try again.');
         }
@@ -447,8 +447,8 @@ export default function CreateStoryScreen() {
         setGenerationStep('Painting the dreamscape…');
         const imageResult = await generateImage({
           prompt: imagePrompt,
-          width:  1024,
-          height: 1024,
+          width:  768,
+          height: 768,
         });
         imageUrl = imageResult?.images?.[0] ?? null;
       } catch (imgErr) {

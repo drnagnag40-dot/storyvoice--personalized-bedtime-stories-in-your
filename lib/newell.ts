@@ -111,23 +111,25 @@ function buildNarratorStyleGuide(style: NarratorStyle): string {
   switch (style) {
     case 'whisper':
       return `
-NARRATOR STYLE — WHISPER (Luna the Owl):
-- Use minimal words. Each sentence should feel like a secret shared in the dark.
-- Favour soft consonants (s, sh, l, m, n) over hard ones.
-- Sentences should be short and breathy — never more than 10 words.
-- Use ellipses (...) to imply pauses and silence.
-- Words like: drift, hush, shimmer, veil, soft, still, feather-light, melt, fade.
-- The tone is intimate and magical, like starlight itself is speaking.`.trim();
+NARRATOR STYLE — LUNA THE OWL (wise · gentle · soothing):
+- Luna is ancient and wise — she has watched over sleeping children for a thousand moonrises.
+- Every sentence is a soft gift: short, breathy, never more than 10 words.
+- Favour hushed consonants: s, sh, l, m, n. Avoid hard k, t, p sounds.
+- Use ellipses (...) as gentle breathing pauses between thoughts.
+- Weave in small, tender wisdom — one quiet truth per paragraph, like a feather landing.
+- Sensory words: drift, hush, shimmer, veil, moonpool, feather-light, silver, still, melt.
+- Tone: intimate and celestial, as if the night sky itself is whispering a lullaby.`.trim();
 
     case 'wise':
       return `
-NARRATOR STYLE — WISE (Barnaby the Bear):
-- Speak with the warmth of a grandmother by a fire, unhurried and certain.
-- Use philosophical observations about nature, the stars, and the heart.
-- Each paragraph should contain one piece of gentle wisdom, like a lesson.
-- Use rich, descriptive language — metaphors comparing big things to small comforts.
-- Words like: ancient, patient, truth, wonder, roots, sky, gentle, understanding.
-- The tone is deep, assured, and tender — like the world itself is reassuring the child.`.trim();
+NARRATOR STYLE — BARNABY THE BEAR (warm · playful · forest-themed):
+- Barnaby is a great old bear who lives in a mossy forest and knows its every secret.
+- He speaks with earthy warmth — slow and unhurried, like honey dripping from a comb.
+- Each paragraph carries one gentle forest-wisdom: lessons from the oak, the stream, the seasons.
+- Use playful, affectionate touches — a rumbling chuckle, a fond nickname, a cosy bear metaphor.
+- Rich forest imagery: honeycomb, pine needles, mossy logs, autumn leaves, a crackling hearth.
+- Words like: roots, warm, patient, sturdy, cosy, amble, honey-golden, wonder, safe, den.
+- Tone: like a beloved uncle bear tucking you in — deep, safe, and gently playful.`.trim();
 
     case 'enthusiastic':
       return `
@@ -206,10 +208,11 @@ STRUCTURE:
 - Paragraph 5 (THE SLEEPY ENDING): This paragraph must be a gentle, rhythmic wind-down. Describe the main character's eyes growing heavy, their breathing slowing to a calm and steady rhythm. Use poetic, repetitive phrasing — soft pillows, warm blankets, the hush of night, fading starlight. The character should drift peacefully to sleep, carried away on a cloud of dreams, as the story whispers to a close. End with one final, tender sentence — very short, very quiet — like a lullaby's last note.
 
 RULES:
-- Exactly 5 paragraphs, each 2–4 sentences.
+- Exactly 5 paragraphs, each 2–4 sentences. Total story: 150–250 words maximum.
 - Use simple, dreamy language a child can easily follow.
 - No conflict, no peril, no exciting twists in paragraphs 4–5.
 - The overall rhythm should slow progressively like a song fading out.
+- Be concise. Every word must earn its place.
 
 ${narratorGuide}
 `.trim();
@@ -222,10 +225,9 @@ export function buildNarratorPreviewPrompt(personality: NarratorPersonality, chi
   const name = childName ?? 'little dreamer';
   return `
 You are ${personality.name} ${personality.species}.
-Write a single short paragraph (3–4 sentences) as a preview of your narration style for ${name}.
-Style: ${personality.style}.
+Write ONE short paragraph (2–3 sentences, 35–50 words) greeting ${name} in your unique voice.
 ${buildNarratorStyleGuide(personality.style)}
-Keep it magical, soothing, and under 60 words. No story title needed.
+Output ONLY the paragraph — no title, no quotation marks, no extra text.
 `.trim();
 }
 
@@ -249,10 +251,11 @@ export function buildVoiceScript(voiceType: 'mom' | 'dad' | 'custom'): string[] 
 export function buildImagePrompt(child: Child, storyTitle: string): string {
   const interests = child.interests.slice(0, 2).join(' and ');
   return `
-A soft, dreamlike children's book illustration of a cozy bedroom scene at night.
-A sleeping child in a warm bed surrounded by ${interests || 'magical stars and animals'}.
-Glowing nightlight, moonlight through curtains, whimsical and warm.
-Story title: "${storyTitle}". Watercolour style, pastel colours, gentle and magical.
+Soft, ethereal, dreamlike children's book illustration. Central subject perfectly centred in frame.
+A peaceful sleeping child surrounded by ${interests || 'glowing stars and woodland creatures'}, bathed in moonlight.
+Style: luminous watercolour, frosted glass pastels, gossamer light rays, gentle bokeh.
+Mood: celestial, hushed, magically soothing. No harsh lines. Title theme: "${storyTitle}".
+Square composition, subject centred, generous negative space, dreamy vignette edges.
 `.trim();
 }
 
@@ -273,28 +276,28 @@ export const STORY_ART_STYLES: ArtStyle[] = [
     label: 'Space Captain',
     emoji: '🚀',
     description: 'Galactic hero among the stars',
-    transformPrompt: 'Transform this photo into a whimsical children\'s book illustration of the person as a space captain hero, wearing a shiny space suit with golden stars, floating among colourful nebulae and planets. Watercolour style, soft pastel colours, magical and dreamlike. Keep the face recognisable and cute.',
+    transformPrompt: 'Transform this photo into a soft, ethereal, dreamlike children\'s book illustration. The person as a space captain hero, centred in frame, wearing a luminous space suit dusted with golden stars, floating serenely among translucent nebulae. Frosted-glass watercolour style, muted cosmic pastels, gossamer light rays, gentle bokeh background. Face recognisable, expression peaceful and heroic.',
   },
   {
     id: 'brave_knight',
     label: 'Brave Knight',
     emoji: '⚔️',
     description: 'Noble guardian of the realm',
-    transformPrompt: 'Transform this photo into a charming children\'s book illustration of the person as a brave little knight in gleaming golden armour, holding a shining shield with stars, in a magical enchanted forest at twilight. Soft watercolour style, warm fairy-tale colours, gentle and heroic. Keep the face recognisable.',
+    transformPrompt: 'Transform this photo into a soft, ethereal, dreamlike children\'s book illustration. The person as a gentle knight centred in frame, wearing soft-glow golden armour, in a moonlit enchanted forest. Frosted watercolour style, warm amber and lavender pastels, shimmering fairy-light bokeh, vignette edges. Face recognisable, expression kind and brave.',
   },
   {
     id: 'forest_fairy',
     label: 'Forest Fairy',
     emoji: '🧚',
     description: 'Magical keeper of the woods',
-    transformPrompt: 'Transform this photo into an enchanting children\'s book illustration of the person as a glowing forest fairy with delicate wings, surrounded by fireflies and moonflowers in a magical woodland. Soft watercolour style, luminous greens and purples, dreamy and peaceful. Keep the face recognisable.',
+    transformPrompt: 'Transform this photo into a soft, ethereal, dreamlike children\'s book illustration. The person as a radiant forest fairy centred in frame, with translucent wings glowing like moonlight, surrounded by fireflies and moonflowers. Luminous frosted watercolour, soft greens and violet pastels, dreamy bokeh, gossamer light. Face recognisable, serene expression.',
   },
   {
     id: 'ocean_explorer',
     label: 'Ocean Explorer',
     emoji: '🐋',
     description: 'Adventurer of the deep seas',
-    transformPrompt: 'Transform this photo into a whimsical children\'s book illustration of the person as a joyful ocean explorer, surrounded by friendly sea creatures, glowing jellyfish and coral castles in a magical underwater world. Watercolour style, deep blues and teals, wonder-filled. Keep the face recognisable.',
+    transformPrompt: 'Transform this photo into a soft, ethereal, dreamlike children\'s book illustration. The person as an ocean explorer centred in frame, surrounded by gentle glowing jellyfish and coral in a magical underwater world. Frosted watercolour style, deep dreamy blues and teals, bioluminescent bokeh, crystalline light rays. Face recognisable, wonder-filled expression.',
   },
 ];
 
@@ -312,19 +315,11 @@ export function buildReflectionQuestionsPrompt(
     : '';
   const storyExcerpt = storyContent.slice(0, 300);
   return `
-You are a gentle, wise bedtime companion. Generate exactly 2-3 short, warm reflection questions for a child named ${childName} after hearing the story "${storyTitle}".
+Gentle bedtime companion. 2 reflection questions for ${childName} after "${storyTitle}".
+Excerpt: "${storyExcerpt}…"${lifeContext ? ` ${lifeContext}` : ''}
 
-Story excerpt: "${storyExcerpt}..."
-
-${lifeContext}
-
-RULES:
-- Each question should be tender, open-ended, and connect the story's moral to the child's real life.
-- Questions should be calming, not exciting. They invite quiet thought, not energetic answers.
-- Use "you" directly to speak to ${childName}.
-- Keep each question under 15 words.
-- Format: Return ONLY the questions, one per line, no numbering, no extra text.
-- Focus on themes like: kindness, bravery, friendship, love, gratitude, dreams.
+RULES: Tender, open-ended, calming. Use "you". Max 12 words each.
+Return ONLY 2 questions, one per line. No numbering, no extra text.
 `.trim();
 }
 
@@ -346,11 +341,10 @@ Style: ${narratorPersonality.style}
 Time of day: ${timeOfDay} (${greeting})
 
 RULES:
-- Keep it to 2-3 sentences maximum.
-- Make it feel magical and personal, like the narrator genuinely missed ${childName}.
-- End with a gentle invitation to start a bedtime story together.
-- Keep it sweet, brief, and in the narrator's unique voice style.
-- No title, no formatting — just the greeting text.
+- Exactly 2 sentences. Max 40 words total.
+- Personal and magical — narrator genuinely missed ${childName}.
+- Second sentence: gentle invitation to start a story.
+- No title, no formatting — greeting text only.
 ${buildNarratorStyleGuide(narratorPersonality.style)}
 `.trim();
 }
@@ -364,17 +358,12 @@ export function buildGrowthThemesPrompt(storyTitles: string[], storyContents: st
   ).join('\n');
 
   return `
-Analyse these recent bedtime stories and identify the 3 main growth themes present across them.
-
-Stories:
+Identify 3 growth themes across these bedtime stories.
 ${stories}
 
-RULES:
-- Return exactly 3 themes as a JSON array.
-- Each theme: { "theme": "Theme Name", "emoji": "emoji", "description": "15 words max", "count": number }
-- Themes should be positive character values like: Kindness, Bravery, Friendship, Curiosity, Compassion, Creativity, Perseverance, Gratitude, Love, Wonder.
-- Count represents how many stories reflect that theme.
-- Return ONLY the JSON array, no other text.
+Return ONLY a JSON array — no other text:
+[{"theme":"Name","emoji":"emoji","description":"max 12 words","count":N}]
+Themes: Kindness, Bravery, Friendship, Curiosity, Compassion, Creativity, Perseverance, Gratitude, Love, Wonder.
 `.trim();
 }
 
@@ -432,9 +421,9 @@ PATH_B_HINT: [one sentence describing this path]
 [/CHOICE_POINT]
 
 RULES:
-- Exactly 3 paragraphs before the choice point.
-- Both choices should be safe, calming, and lead to a good outcome.
-- Use simple, dreamy language.
+- Exactly 3 paragraphs before the choice point. Total story text: 100–140 words.
+- Both choices: safe, calming, lead to good outcome.
+- Simple, dreamy language. Be concise — every word counts.
 - The choice should feel magical and empowering.
 ${narratorGuide}
 `.trim();
@@ -459,23 +448,22 @@ export function buildStoryBranchPrompt(
     ? `IMPORTANT: Write entirely in ${LANGUAGE_NAMES[language] ?? language}.`
     : '';
 
+  // Trim context to only first 400 chars — enough to preserve voice, minimal tokens
+  const contextSnippet = storyStart.slice(0, 400);
+
   return `
 ${narratorIntro}
 ${langNote}
-Continue and complete this bedtime story for ${childName}. The child chose: "${chosenPath}".
+Continue this bedtime story for ${childName}. Chosen path: "${chosenPath}".
 
-Story so far:
-${storyStart.slice(0, 600)}
+Story context:
+${contextSnippet}…
 
-STRUCTURE:
-- Write exactly 2 paragraphs as the story's conclusion.
-- Paragraph 1: The adventure continues based on the chosen path. Gentle, calming.
-- Paragraph 2: The SLEEPY ENDING. The character's eyes grow heavy, breathing slows, they drift peacefully to sleep. Use rhythmic, repetitive phrasing — soft pillows, warm blankets, fading starlight. End with one tender, very short sentence like a lullaby's last note.
+STRUCTURE — 2 paragraphs, 80–100 words total:
+- Para 1 (3 sentences): Adventure continues gently on the chosen path. Calming.
+- Para 2 (3 sentences): SLEEPY ENDING — eyes heavy, breathing slow, drift to sleep. Rhythmic, repetitive. End with one very short tender sentence.
 
-RULES:
-- Keep it warm, safe, and deeply soothing.
-- The ending must make ${childName} feel calm and ready to sleep.
-- Maximum 4 sentences per paragraph.
+RULES: Warm, safe, soothing. Max 50 words per paragraph. No new characters or plot twists.
 ${narratorGuide}
 `.trim();
 }

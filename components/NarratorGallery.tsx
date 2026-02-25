@@ -29,6 +29,8 @@ import Animated, {
   withSequence,
   Easing,
   cancelAnimation,
+  interpolate,
+  Extrapolation,
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateText } from '@fastshot/ai';
@@ -194,6 +196,35 @@ function PreviewModal({
   const [isLoading,   setIsLoading]   = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
+  // ── Portrait pulsing glow ─────────────────────────────────────────────
+  // Fast pulse while loading → slow gentle pulse when text is visible
+  const glowPulse = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible && narrator) {
+      cancelAnimation(glowPulse);
+      // Fast when loading, slow and soothing when text is displayed
+      const halfCycle = isLoading ? 600 : 1600;
+      glowPulse.value = withRepeat(
+        withSequence(
+          withTiming(1,    { duration: halfCycle, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0.15, { duration: halfCycle, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false
+      );
+    } else {
+      cancelAnimation(glowPulse);
+      glowPulse.value = withTiming(0, { duration: 350 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, isLoading, narrator?.id]);
+
+  const portraitGlowStyle = useAnimatedStyle(() => ({
+    shadowOpacity: interpolate(glowPulse.value, [0, 1], [0.12, 0.9], Extrapolation.CLAMP),
+    shadowRadius:  interpolate(glowPulse.value, [0, 1], [5,    26],   Extrapolation.CLAMP),
+  }));
+
   useEffect(() => {
     if (visible && narrator) {
       void loadPreview();
@@ -211,7 +242,7 @@ function PreviewModal({
     setError(null);
     try {
       const prompt = buildNarratorPreviewPrompt(narrator, childName);
-      const result = await generateText({ prompt });
+      const result = await generateText({ prompt, temperature: 0.7 });
       setPreviewText(result?.trim() ?? narrator.previewText);
     } catch {
       setPreviewText(narrator.previewText);
@@ -247,10 +278,21 @@ function PreviewModal({
             style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
           />
 
-          {/* Narrator portrait */}
-          <View style={[styles.previewPortrait, { backgroundColor: `${narrator.glowColor}25`, borderColor: narrator.accentColor }]}>
+          {/* Narrator portrait with pulsing glow ring */}
+          <Animated.View
+            style={[
+              styles.previewPortrait,
+              {
+                backgroundColor: `${narrator.glowColor}25`,
+                borderColor:     narrator.accentColor,
+                shadowColor:     narrator.glowColor,
+                shadowOffset:    { width: 0, height: 0 },
+              },
+              portraitGlowStyle,
+            ]}
+          >
             <Text style={styles.previewEmoji}>{narrator.emoji}</Text>
-          </View>
+          </Animated.View>
 
           <Text style={[styles.previewNarratorName, { color: narrator.accentColor }]}>
             {narrator.name} {narrator.species}
