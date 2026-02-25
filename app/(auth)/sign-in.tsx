@@ -303,6 +303,64 @@ const socialStyles = StyleSheet.create({
   },
 });
 
+// ─── Error message helpers ────────────────────────────────────────────────────
+function getFriendlyErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+
+  if (!raw) return 'Something went wrong. Please try again.';
+
+  const lower = raw.toLowerCase();
+
+  // Network / connectivity errors
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('network request failed') ||
+    lower.includes('fetch failed') ||
+    lower.includes('networkerror') ||
+    lower.includes('econnrefused') ||
+    lower.includes('etimedout') ||
+    lower.includes('timeout') ||
+    lower.includes('no internet') ||
+    (lower.includes('network') && lower.includes('error'))
+  ) {
+    return 'Unable to connect. Please check your internet connection and try again.';
+  }
+
+  // Already-registered
+  if (
+    lower.includes('user already registered') ||
+    lower.includes('already been registered') ||
+    lower.includes('already exists')
+  ) {
+    return 'An account with this email already exists. Try signing in instead.';
+  }
+
+  // Wrong credentials
+  if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+    return 'Incorrect email or password. Please try again.';
+  }
+
+  // Unverified email
+  if (lower.includes('email not confirmed') || lower.includes('not confirmed')) {
+    return 'Please verify your email address before signing in.';
+  }
+
+  // Rate limiting
+  if (lower.includes('rate limit') || lower.includes('too many request')) {
+    return 'Too many attempts. Please wait a moment and try again.';
+  }
+
+  // Suppress internal placeholder / supabase endpoint leakage
+  if (lower.includes('placeholder.supabase') || lower.includes('placeholder-anon-key')) {
+    return 'Authentication service is not configured. Please contact support.';
+  }
+
+  // Fall back to the original message if it looks user-readable
+  if (raw.length <= 200) return raw;
+
+  return 'Something went wrong. Please try again.';
+}
+
 // ─── Main Auth Screen ─────────────────────────────────────────────────────────
 export default function SignInScreen() {
   const router = useRouter();
@@ -397,7 +455,8 @@ export default function SignInScreen() {
     try {
       await signInWithEmail(email.trim(), password);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
+    } catch (err) {
+      setLocalError(getFriendlyErrorMessage(err));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
@@ -422,14 +481,19 @@ export default function SignInScreen() {
     try {
       await signUpWithEmail(email.trim(), password);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
+    } catch (err) {
+      setLocalError(getFriendlyErrorMessage(err));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
 
   const handleSubmit = () => (mode === 'signin' ? void handleSignIn() : void handleSignUp());
 
-  const displayError = localError || (error ? error.message : '') || (params.error ? decodeURIComponent(params.error) : '');
+  const rawAuthError = error ? error.message : '';
+  const displayError =
+    localError ||
+    (rawAuthError ? getFriendlyErrorMessage(rawAuthError) : '') ||
+    (params.error ? decodeURIComponent(params.error) : '');
 
   // ── Email verification pending ────────────────────────────────────────────────
   if (pendingEmailVerification) {
