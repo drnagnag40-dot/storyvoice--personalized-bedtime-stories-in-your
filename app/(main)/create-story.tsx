@@ -8,10 +8,13 @@ import {
   Alert,
   Dimensions,
   Image,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BreathingGradient from '@/components/BreathingGradient';
 import { useAuth } from '@fastshot/auth';
 import Animated, {
   useSharedValue,
@@ -147,10 +150,24 @@ function ThemeCard({
           isSelected && { borderColor: theme.accentColor, borderWidth: 2 },
         ]}
       >
+        {/* Glass blur layer */}
+        {Platform.OS !== 'web' && (
+          <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+        )}
+        {/* Glass base */}
         <LinearGradient
-          colors={isSelected ? theme.gradientColors : ['rgba(37,38,85,0.7)', 'rgba(37,38,85,0.3)']}
+          colors={['rgba(255,255,255,0.09)', 'rgba(255,255,255,0.02)']}
           style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
         />
+        {/* Accent tint when selected */}
+        {isSelected && (
+          <LinearGradient
+            colors={theme.gradientColors}
+            style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+          />
+        )}
+        {/* Top glass shine */}
+        <View style={styles.glassTopEdge} />
         <Text style={styles.themeIcon}>{theme.icon}</Text>
         <Text style={[styles.themeLabel, isSelected && { color: theme.accentColor }]}>
           {theme.label}
@@ -536,12 +553,8 @@ export default function CreateStoryScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Background gradient */}
-      <LinearGradient
-        colors={[Colors.deepSpace, Colors.midnightNavy, '#2B1A5C']}
-        locations={[0, 0.45, 1]}
-        style={StyleSheet.absoluteFill}
-      />
+      {/* Crystal Night breathing gradient */}
+      <BreathingGradient />
 
       {/* Warp star field – accelerates when generating */}
       <WarpStarField count={70} accelerating={isGenerating} />
@@ -587,10 +600,14 @@ export default function CreateStoryScreen() {
           {/* ── Child profile mini-card ───────────────────────────────── */}
           {child ? (
             <View style={styles.childMiniCard}>
+              {Platform.OS !== 'web' && (
+                <BlurView intensity={22} tint="dark" style={StyleSheet.absoluteFill} />
+              )}
               <LinearGradient
-                colors={['rgba(107,72,184,0.35)', 'rgba(74,56,128,0.15)']}
+                colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.03)']}
                 style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
               />
+              <View style={styles.glassTopEdge} />
               <View style={styles.childMiniAvatar}>
                 <Text style={styles.childMiniAvatarText}>
                   {child.name.charAt(0).toUpperCase()}
@@ -798,6 +815,13 @@ export default function CreateStoryScreen() {
           {/* ── Story details preview ─────────────────────────────────── */}
           {selectedTheme && child && (
             <View style={styles.previewCard}>
+              {Platform.OS !== 'web' && (
+                <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+              )}
+              <LinearGradient
+                colors={['rgba(255,255,255,0.09)', 'rgba(255,255,255,0.02)']}
+                style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+              />
               <LinearGradient
                 colors={[
                   `${selectedThemeObj?.accentColor ?? Colors.celestialGold}18`,
@@ -805,6 +829,7 @@ export default function CreateStoryScreen() {
                 ]}
                 style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
               />
+              <View style={styles.glassTopEdge} />
               <Text style={styles.previewIcon}>📖</Text>
               <View style={styles.previewInfo}>
                 <Text style={styles.previewTitle}>
@@ -921,8 +946,19 @@ export default function CreateStoryScreen() {
 // Styles
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container:       { flex: 1, backgroundColor: Colors.deepSpace },
-  content:         { paddingHorizontal: Spacing.lg },
+  container:   { flex: 1, backgroundColor: '#0E0820' },
+  content:     { paddingHorizontal: Spacing.lg },
+
+  // Glass utility
+  glassTopEdge: {
+    position:        'absolute',
+    top:             0,
+    left:            '15%',
+    right:           '15%',
+    height:          1,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    borderRadius:    1,
+  },
 
   // ── Header
   header: {
@@ -935,60 +971,73 @@ const styles = StyleSheet.create({
     width:           44,
     height:          44,
     borderRadius:    22,
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.07)',
     alignItems:      'center',
     justifyContent:  'center',
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.14)',
+    // Float
+    shadowColor:     '#9B6FDE',
+    shadowOffset:    { width: 0, height: 4 },
+    shadowRadius:    10,
+    shadowOpacity:   0.28,
+    elevation:       5,
   },
-  backIcon:        { fontSize: 28, color: Colors.moonlightCream, lineHeight: 32 },
+  backIcon:        { fontSize: 28, color: '#FFFFFF', lineHeight: 32 },
   headerCenter:    { alignItems: 'center' },
-  headerTitle:     { fontFamily: Fonts.extraBold, fontSize: 20, color: Colors.moonlightCream },
-  headerSubtitle:  { fontFamily: Fonts.regular,   fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  headerTitle:     { fontFamily: Fonts.extraBold, fontSize: 20, color: '#FFFFFF', letterSpacing: 0.3 },
+  headerSubtitle:  { fontFamily: Fonts.regular,   fontSize: 12, color: 'rgba(240,235,248,0.55)', marginTop: 2 },
 
   // ── Child mini-card
   childMiniCard: {
     flexDirection:   'row',
     alignItems:      'center',
-    backgroundColor: Colors.cardBg,
     borderRadius:    Radius.xl,
     padding:         Spacing.md,
     marginBottom:    Spacing.xl,
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.14)',
     overflow:        'hidden',
     gap:             12,
+    // Glass float
+    shadowColor:     '#9B6FDE',
+    shadowOffset:    { width: 0, height: 6 },
+    shadowRadius:    18,
+    shadowOpacity:   0.25,
+    elevation:       8,
   },
   childMiniAvatar: {
     width:           44,
     height:          44,
     borderRadius:    22,
-    backgroundColor: Colors.softPurple,
+    backgroundColor: 'rgba(107,72,184,0.45)',
     alignItems:      'center',
     justifyContent:  'center',
+    borderWidth:     1,
+    borderColor:     'rgba(255,255,255,0.20)',
   },
   childMiniAvatarText: { fontFamily: Fonts.extraBold, fontSize: 18, color: '#fff' },
   childMiniInfo:       { flex: 1 },
-  childMiniLabel:      { fontFamily: Fonts.regular,   fontSize: 11, color: Colors.textMuted },
-  childMiniName:       { fontFamily: Fonts.extraBold, fontSize: 16, color: Colors.moonlightCream },
+  childMiniLabel:      { fontFamily: Fonts.regular,   fontSize: 11, color: 'rgba(240,235,248,0.55)' },
+  childMiniName:       { fontFamily: Fonts.extraBold, fontSize: 16, color: '#FFFFFF' },
   childMiniInterests:  { fontFamily: Fonts.regular,   fontSize: 11, color: Colors.celestialGold, marginTop: 2 },
   childMiniEmoji:      { fontSize: 28 },
 
   noChildCard: {
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius:    Radius.xl,
     padding:         Spacing.lg,
     alignItems:      'center',
-    borderWidth:     2,
-    borderColor:     Colors.borderColor,
+    borderWidth:     1,
+    borderColor:     'rgba(255,255,255,0.12)',
     borderStyle:     'dashed',
     marginBottom:    Spacing.xl,
   },
-  noChildText: { fontFamily: Fonts.bold, fontSize: 14, color: Colors.textMuted },
+  noChildText: { fontFamily: Fonts.bold, fontSize: 14, color: 'rgba(240,235,248,0.5)' },
 
   // ── Theme grid
-  sectionTitle:    { fontFamily: Fonts.extraBold, fontSize: 19, color: Colors.moonlightCream, marginBottom: 4 },
-  sectionSubtitle: { fontFamily: Fonts.regular,   fontSize: 13, color: Colors.textMuted, marginBottom: Spacing.lg },
+  sectionTitle:    { fontFamily: Fonts.extraBold, fontSize: 19, color: '#FFFFFF', marginBottom: 4, letterSpacing: 0.2 },
+  sectionSubtitle: { fontFamily: Fonts.regular,   fontSize: 13, color: 'rgba(240,235,248,0.55)', marginBottom: Spacing.lg },
 
   themesGrid: {
     flexDirection: 'row',
@@ -1003,28 +1052,30 @@ const styles = StyleSheet.create({
   themeCardGlow: {
     borderRadius:   Radius.xl,
     shadowOffset:   { width: 0, height: 0 },
-    shadowRadius:   16,
-    shadowOpacity:  0.6,
-    elevation:      8,
+    shadowRadius:   20,
+    shadowOpacity:  0.7,
+    elevation:      10,
   },
   themeCard: {
-    backgroundColor: Colors.cardBg,
     borderRadius:    Radius.xl,
-    // Responsive padding: tighter on small screens to prevent text clipping
     padding:         CARD_PADDING,
     alignItems:      'center',
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.14)',
     overflow:        'hidden',
-    // minHeight scales with responsive padding so content always fits
     minHeight:       CARD_PADDING * 2 + 110,
     justifyContent:  'center',
     gap:             4,
+    // Glass float
+    shadowColor:     '#9B6FDE',
+    shadowOffset:    { width: 0, height: 6 },
+    shadowRadius:    18,
+    shadowOpacity:   0.25,
+    elevation:       8,
   },
-  // Scale icon & text slightly on very small screens
   themeIcon:        { fontSize: W < 360 ? 28 : 36 },
-  themeLabel:       { fontFamily: Fonts.extraBold, fontSize: W < 360 ? 13 : 15, color: Colors.moonlightCream, textAlign: 'center' },
-  themeDescription: { fontFamily: Fonts.regular,   fontSize: W < 360 ? 10 : 11, color: Colors.textMuted, textAlign: 'center' },
+  themeLabel:       { fontFamily: Fonts.extraBold, fontSize: W < 360 ? 13 : 15, color: '#FFFFFF', textAlign: 'center' },
+  themeDescription: { fontFamily: Fonts.regular,   fontSize: W < 360 ? 10 : 11, color: 'rgba(240,235,248,0.55)', textAlign: 'center' },
   selectedBadge: {
     position:    'absolute',
     top:         10,
@@ -1034,6 +1085,8 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems:  'center',
     justifyContent: 'center',
+    borderWidth:  1,
+    borderColor: 'rgba(255,255,255,0.30)',
   },
   selectedBadgeText: { fontFamily: Fonts.extraBold, fontSize: 11, color: '#fff' },
 
@@ -1041,21 +1094,26 @@ const styles = StyleSheet.create({
   previewCard: {
     flexDirection:   'row',
     alignItems:      'center',
-    backgroundColor: Colors.cardBg,
     borderRadius:    Radius.xl,
     padding:         Spacing.md,
     marginBottom:    Spacing.xl,
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.14)',
     gap:             12,
     overflow:        'hidden',
+    // Glass float
+    shadowColor:     '#9B6FDE',
+    shadowOffset:    { width: 0, height: 5 },
+    shadowRadius:    14,
+    shadowOpacity:   0.22,
+    elevation:       7,
   },
   previewIcon:   { fontSize: 28 },
   previewInfo:   { flex: 1 },
-  previewTitle:  { fontFamily: Fonts.bold,    fontSize: 14, color: Colors.moonlightCream },
-  previewDetail: { fontFamily: Fonts.regular, fontSize: 12, color: Colors.textMuted, marginTop: 3 },
+  previewTitle:  { fontFamily: Fonts.bold,    fontSize: 14, color: '#FFFFFF' },
+  previewDetail: { fontFamily: Fonts.regular, fontSize: 12, color: 'rgba(240,235,248,0.55)', marginTop: 3 },
 
-  // ── Generate button
+  // ── Generate button — crystal gold float
   generateWrapper: {
     alignItems:    'center',
     justifyContent: 'center',
@@ -1069,14 +1127,20 @@ const styles = StyleSheet.create({
     backgroundColor: NEBULA_PURPLE,
     shadowColor:  NEBULA_PURPLE,
     shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 30,
+    shadowRadius: 40,
     shadowOpacity: 1,
-    elevation:    20,
+    elevation:    24,
   },
   generateButtonContainer: { width: '100%' },
   generateButton: {
     borderRadius: Radius.full,
     overflow:     'hidden',
+    // Gold glow float
+    shadowColor:  Colors.celestialGold,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 28,
+    shadowOpacity: 0.50,
+    elevation:    14,
   },
   generateButtonDisabled: { opacity: 0.55 },
   generateButtonGradient: {
@@ -1084,6 +1148,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     borderRadius:     Radius.full,
     alignItems:       'center',
+    // Top shine border
+    borderWidth:      1,
+    borderColor:      'rgba(255,255,255,0.28)',
   },
   generateContent: {
     flexDirection: 'row',
@@ -1103,7 +1170,7 @@ const styles = StyleSheet.create({
   hintText: {
     fontFamily:  Fonts.regular,
     fontSize:    13,
-    color:       Colors.textMuted,
+    color:       'rgba(240,235,248,0.50)',
     textAlign:   'center',
     marginBottom: Spacing.xl,
   },
@@ -1111,20 +1178,20 @@ const styles = StyleSheet.create({
     flexDirection:   'row',
     alignItems:      'center',
     justifyContent:  'center',
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius:    Radius.xl,
     padding:         Spacing.md,
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.12)',
     gap:             0,
   },
   infoItem:  { flex: 1, alignItems: 'center', gap: 4 },
   infoEmoji: { fontSize: 20 },
-  infoText:  { fontFamily: Fonts.bold, fontSize: 11, color: Colors.textMuted },
+  infoText:  { fontFamily: Fonts.bold, fontSize: 11, color: 'rgba(240,235,248,0.55)' },
   infoDivider: {
     width:           1,
     height:          32,
-    backgroundColor: Colors.borderColor,
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
 
   // ── Warp label during generation
@@ -1135,8 +1202,8 @@ const styles = StyleSheet.create({
   warpLabelText: {
     fontFamily:  Fonts.medium,
     fontSize:    13,
-    color:       NEBULA_PURPLE,
-    letterSpacing: 1,
+    color:       '#C9A8FF',
+    letterSpacing: 1.5,
     textAlign:   'center',
   },
 
@@ -1145,23 +1212,28 @@ const styles = StyleSheet.create({
     backgroundColor: NEBULA_PURPLE,
   },
 
-  // ── AI Family Portrait
+  // ── AI Family Portrait (glass panels)
   portraitToggleBtn: {
     flexDirection:   'row',
     alignItems:      'center',
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius:    Radius.xl,
     padding:         Spacing.md,
     marginBottom:    Spacing.md,
     borderWidth:     1,
-    borderColor:     'rgba(255,215,0,0.25)',
+    borderColor:     'rgba(255,215,0,0.20)',
     overflow:        'hidden',
     gap:             8,
+    shadowColor:     '#FFD700',
+    shadowOffset:    { width: 0, height: 4 },
+    shadowRadius:    12,
+    shadowOpacity:   0.15,
+    elevation:       5,
   },
   portraitToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   portraitToggleEmoji: { fontSize: 22 },
-  portraitToggleLabel: { fontFamily: Fonts.extraBold, fontSize: 14, color: Colors.moonlightCream },
-  portraitToggleSubLabel: { fontFamily: Fonts.regular, fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  portraitToggleLabel: { fontFamily: Fonts.extraBold, fontSize: 14, color: '#FFFFFF' },
+  portraitToggleSubLabel: { fontFamily: Fonts.regular, fontSize: 11, color: 'rgba(240,235,248,0.55)', marginTop: 1 },
   portraitProBadge: {
     backgroundColor: Colors.celestialGold,
     borderRadius: Radius.full,
@@ -1169,26 +1241,26 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   portraitProText: { fontFamily: Fonts.black, fontSize: 9, color: Colors.deepSpace },
-  portraitToggleChevron: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.textMuted },
+  portraitToggleChevron: { fontFamily: Fonts.bold, fontSize: 12, color: 'rgba(240,235,248,0.45)' },
   interactiveActiveBtn: {
-    borderColor: 'rgba(107,72,184,0.5)',
+    borderColor: 'rgba(107,72,184,0.45)',
     borderWidth: 1.5,
   },
 
   portraitSection: {
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius:    Radius.xl,
     padding:         Spacing.md,
     marginBottom:    Spacing.lg,
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.12)',
     gap:             Spacing.md,
   },
   portraitSectionTitle: {
     fontFamily: Fonts.bold,
     fontSize:   13,
-    color:      Colors.textMuted,
-    letterSpacing: 0.5,
+    color:      'rgba(240,235,248,0.50)',
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   artStylesRow: { flexGrow: 0 },
@@ -1199,21 +1271,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius:    Radius.md,
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
-    backgroundColor: Colors.inputBg,
+    borderColor:     'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     marginRight:     8,
     gap:             4,
     overflow:        'hidden',
     minWidth:        72,
   },
   artStyleCardSelected: {
-    borderColor: Colors.celestialGold,
+    borderColor: 'rgba(255,215,0,0.45)',
+    backgroundColor: 'rgba(255,215,0,0.07)',
   },
   artStyleCardEmoji: { fontSize: 22 },
   artStyleCardLabel: {
     fontFamily: Fonts.bold,
     fontSize:   11,
-    color:      Colors.moonlightCream,
+    color:      '#FFFFFF',
     textAlign:  'center',
   },
 
@@ -1222,10 +1295,10 @@ const styles = StyleSheet.create({
     width:           80,
     height:          80,
     borderRadius:    Radius.md,
-    borderWidth:     2,
-    borderColor:     Colors.borderColor,
+    borderWidth:     1,
+    borderColor:     'rgba(255,255,255,0.14)',
     borderStyle:     'dashed',
-    backgroundColor: Colors.inputBg,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     alignItems:      'center',
     justifyContent:  'center',
     overflow:        'hidden',
@@ -1233,7 +1306,7 @@ const styles = StyleSheet.create({
   },
   pickedPhotoThumb: { width: '100%', height: '100%', borderRadius: Radius.md },
   pickPhotoBtnEmoji: { fontSize: 22 },
-  pickPhotoBtnText: { fontFamily: Fonts.bold, fontSize: 10, color: Colors.textMuted, textAlign: 'center' },
+  pickPhotoBtnText: { fontFamily: Fonts.bold, fontSize: 10, color: 'rgba(240,235,248,0.50)', textAlign: 'center' },
 
   transformBtn: {
     flex:            1,
@@ -1242,11 +1315,17 @@ const styles = StyleSheet.create({
     alignItems:      'center',
     justifyContent:  'center',
     overflow:        'hidden',
+    // Gold float
+    shadowColor:     Colors.celestialGold,
+    shadowOffset:    { width: 0, height: 4 },
+    shadowRadius:    14,
+    shadowOpacity:   0.45,
+    elevation:       8,
   },
   transformBtnDisabled: { opacity: 0.55 },
   transformBtnText: { fontFamily: Fonts.extraBold, fontSize: 13, color: Colors.deepSpace },
 
   polaroidContainer: { alignItems: 'center', gap: Spacing.sm },
   retransformLink: { marginTop: 4 },
-  retransformLinkText: { fontFamily: Fonts.medium, fontSize: 12, color: Colors.textMuted, textDecorationLine: 'underline' },
+  retransformLinkText: { fontFamily: Fonts.medium, fontSize: 12, color: 'rgba(240,235,248,0.50)', textDecorationLine: 'underline' },
 });

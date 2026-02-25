@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   FlatList,
   LayoutAnimation,
   Platform,
@@ -14,12 +13,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@fastshot/auth';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedScrollHandler,
   withTiming,
   withDelay,
   withSpring,
@@ -27,6 +28,7 @@ import Animated, {
   interpolate,
   Extrapolation,
 } from 'react-native-reanimated';
+import BreathingGradient from '@/components/BreathingGradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
 import ParentalGate from '@/components/ParentalGate';
@@ -115,12 +117,28 @@ function StoryCard({
       onPress={onPress}
       activeOpacity={story.content ? 0.8 : 1}
     >
+      {/* Glass blur layer */}
+      {Platform.OS !== 'web' && (
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+      )}
+      {/* Glass gradient */}
       <LinearGradient
-        colors={[`${accent}22`, `${accent}08`]}
+        colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']}
         style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
       />
-      <View style={styles.storyCardEmojiBg}>
+      {/* Accent colour tint */}
+      <LinearGradient
+        colors={[`${accent}18`, `${accent}05`]}
+        style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+      />
+      {/* Top shine edge */}
+      <View style={styles.glassTopEdge} />
+
+      {/* Glass sphere emoji badge */}
+      <View style={[styles.storyCardEmojiBg, { backgroundColor: `${accent}22`, borderColor: `${accent}35` }]}>
         <Text style={styles.storyCardEmoji}>{emoji}</Text>
+        {/* Inner highlight */}
+        <View style={styles.storyCardEmojiGlow} />
       </View>
       <Text style={styles.storyCardTitle} numberOfLines={3}>{story.title}</Text>
       {story.content == null ? (
@@ -190,7 +208,15 @@ function TabSwitcher({
 
   return (
     <View style={styles.tabBar}>
-      {/* Sliding indicator */}
+      {Platform.OS !== 'web' && (
+        <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+      )}
+      {/* Glass tab bar background */}
+      <LinearGradient
+        colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)']}
+        style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+      />
+      {/* Sliding indicator (frosted glass pill) */}
       <Animated.View style={[styles.tabIndicator, { width: tabW - 6 }, indicatorStyle]} />
 
       {/* All Stories tab */}
@@ -545,6 +571,19 @@ export default function HomeScreen() {
     }
   }, [user?.id]);
 
+  // Scroll parallax tracking
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
+
+  // Parallax style for glass cards (move slightly slower = depth illusion)
+  const parallaxCardsStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, 400], [0, -10], Extrapolation.CLAMP) }],
+  }));
+
   const headerStyle  = useAnimatedStyle(() => ({ opacity: headerOpacity.value }));
   const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
   const activeVoice  = voices.find((v) => v.id === activeVoiceId) ?? voices[0] ?? null;
@@ -586,14 +625,13 @@ export default function HomeScreen() {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[Colors.deepSpace, Colors.midnightNavy, '#251B5A']}
-        locations={[0, 0.5, 1]}
-        style={StyleSheet.absoluteFill}
-      />
+      {/* Crystal Night breathing gradient */}
+      <BreathingGradient />
       <StarField count={55} />
 
-      <ScrollView
+      <Animated.ScrollView
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
           { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 },
@@ -617,8 +655,11 @@ export default function HomeScreen() {
                 setShowPaywall(true);
               }}
             >
+              {Platform.OS !== 'web' && (
+                <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+              )}
               <LinearGradient
-                colors={['rgba(255,215,0,0.25)', 'rgba(255,215,0,0.1)']}
+                colors={['rgba(255,215,0,0.22)', 'rgba(255,215,0,0.08)']}
                 style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
               />
               <Text style={styles.proButtonText}>👑 Pro</Text>
@@ -637,11 +678,16 @@ export default function HomeScreen() {
         <Animated.View style={contentStyle}>
           {/* Child profile card */}
           {child && (
-            <View style={styles.childCard}>
+            <Animated.View style={[styles.childCard, parallaxCardsStyle]}>
+              {Platform.OS !== 'web' && (
+                <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+              )}
               <LinearGradient
-                colors={['rgba(107,72,184,0.4)', 'rgba(74,56,128,0.2)']}
+                colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.03)']}
                 style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
               />
+              {/* Top highlight edge (glass shine) */}
+              <View style={styles.glassTopEdge} />
               <View style={styles.childCardHeader}>
                 <View style={styles.childAvatar}>
                   <Text style={styles.childAvatarEmoji}>
@@ -677,7 +723,7 @@ export default function HomeScreen() {
                   )}
                 </View>
               )}
-            </View>
+            </Animated.View>
           )}
 
           {/* Active Voice Banner */}
@@ -689,11 +735,15 @@ export default function HomeScreen() {
             }}
             activeOpacity={0.8}
           >
+            {Platform.OS !== 'web' && (
+              <BlurView intensity={22} tint="dark" style={StyleSheet.absoluteFill} />
+            )}
             <LinearGradient
-              colors={['rgba(74,56,128,0.6)', 'rgba(37,38,85,0.4)']}
+              colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)']}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
             />
+            <View style={styles.glassTopEdge} />
             <View style={styles.activVoiceBannerLeft}>
               <View style={styles.activeVoiceDot} />
               <View>
@@ -795,10 +845,14 @@ export default function HomeScreen() {
               }}
               activeOpacity={0.8}
             >
+              {Platform.OS !== 'web' && (
+                <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              )}
               <LinearGradient
-                colors={['rgba(74,56,128,0.5)', 'rgba(37,38,85,0.3)']}
+                colors={['rgba(255,255,255,0.09)', 'rgba(255,255,255,0.02)']}
                 style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
               />
+              <View style={styles.glassTopEdge} />
               <Text style={styles.collectionsCardEmoji}>📚</Text>
               <View style={styles.collectionsCardText}>
                 <Text style={styles.collectionsCardTitle}>Create a Series</Text>
@@ -822,13 +876,18 @@ export default function HomeScreen() {
                 router.push('/(onboarding)/voice-studio');
               }}
             >
-              <LinearGradient
-                colors={[Colors.softPurple, Colors.mediumPurple]}
-                style={styles.quickActionGradient}
-              >
-                <Text style={styles.quickActionEmoji}>🎙️</Text>
-                <Text style={styles.quickActionText}>Record Voice</Text>
-              </LinearGradient>
+              <View style={styles.quickActionGlassWrapper}>
+                {Platform.OS !== 'web' && (
+                  <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+                )}
+                <LinearGradient
+                  colors={['rgba(107,72,184,0.5)', 'rgba(107,72,184,0.18)']}
+                  style={styles.quickActionGradient}
+                >
+                  <Text style={styles.quickActionEmoji}>🎙️</Text>
+                  <Text style={styles.quickActionText}>Record Voice</Text>
+                </LinearGradient>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickAction}
@@ -837,17 +896,22 @@ export default function HomeScreen() {
                 router.push('/(onboarding)/child-profile');
               }}
             >
-              <LinearGradient
-                colors={['rgba(74,56,128,0.6)', 'rgba(37,38,85,0.6)']}
-                style={styles.quickActionGradient}
-              >
-                <Text style={styles.quickActionEmoji}>✏️</Text>
-                <Text style={styles.quickActionText}>Edit Profile</Text>
-              </LinearGradient>
+              <View style={styles.quickActionGlassWrapper}>
+                {Platform.OS !== 'web' && (
+                  <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+                )}
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)']}
+                  style={styles.quickActionGradient}
+                >
+                  <Text style={styles.quickActionEmoji}>✏️</Text>
+                  <Text style={styles.quickActionText}>Edit Profile</Text>
+                </LinearGradient>
+              </View>
             </TouchableOpacity>
           </View>
         </Animated.View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* ── Parental Gate ─────────────────────────────────────────────────────── */}
       <ParentalGate
@@ -900,10 +964,14 @@ export default function HomeScreen() {
           onPress={() => setShowVoiceModal(false)}
         >
           <View style={styles.voiceModal}>
+            {Platform.OS !== 'web' && (
+              <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+            )}
             <LinearGradient
-              colors={[Colors.midnightNavy, Colors.deepSpace]}
+              colors={['rgba(20,8,45,0.95)', 'rgba(14,8,32,0.98)']}
               style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
             />
+            <View style={styles.glassTopEdge} />
             <TouchableOpacity activeOpacity={1} style={styles.voiceModalBody}>
               <View style={styles.voiceModalHandle} />
               <Text style={styles.voiceModalTitle}>🎙️  Choose Narrator</Text>
@@ -998,10 +1066,15 @@ export default function HomeScreen() {
           onPress={() => setShowGreeting(false)}
         >
           <Animated.View style={[styles.greetingCard, greetingStyle]}>
+            {Platform.OS !== 'web' && (
+              <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            )}
             <LinearGradient
-              colors={[Colors.midnightNavy, Colors.deepSpace, '#1F1040']}
+              colors={['rgba(30,10,62,0.92)', 'rgba(14,8,32,0.97)']}
               style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
             />
+            {/* Top highlight edge */}
+            <View style={[styles.glassTopEdge, { left: '10%', right: '10%' }]} />
             {/* Gold corner ornaments */}
             <View style={styles.greetingCornerTL} />
             <View style={styles.greetingCornerBR} />
@@ -1044,28 +1117,51 @@ export default function HomeScreen() {
 // Styles
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.deepSpace },
+  container: { flex: 1, backgroundColor: '#0E0820' },
   content:   { paddingHorizontal: Spacing.lg },
+
+  // Glass utility
+  glassTopEdge: {
+    position:        'absolute',
+    top:             0,
+    left:            '15%',
+    right:           '15%',
+    height:          1,
+    backgroundColor: 'rgba(255,255,255,0.30)',
+    borderRadius:    1,
+  },
 
   // Header
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.xl },
-  greeting:     { fontFamily: Fonts.regular, fontSize: 14, color: Colors.textMuted },
-  userName:     { fontFamily: Fonts.extraBold, fontSize: 22, color: Colors.moonlightCream },
+  greeting:     { fontFamily: Fonts.regular, fontSize: 14, color: 'rgba(240,235,248,0.55)' },
+  userName:     { fontFamily: Fonts.extraBold, fontSize: 22, color: '#FFFFFF', letterSpacing: 0.2 },
   headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
   proButton: {
     paddingHorizontal: 12,
     paddingVertical:   8,
     borderRadius:      Radius.full,
     borderWidth:       1,
-    borderColor:       'rgba(255,215,0,0.4)',
+    borderColor:       'rgba(255,215,0,0.35)',
     overflow:          'hidden',
+    // Floating glass glow
+    shadowColor:       '#FFD700',
+    shadowOffset:      { width: 0, height: 0 },
+    shadowRadius:      8,
+    shadowOpacity:     0.25,
+    elevation:         4,
   },
   proButtonText: { fontFamily: Fonts.extraBold, fontSize: 12, color: Colors.celestialGold },
   settingsButton: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.07)',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.borderColor,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+    // Floating
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    shadowOpacity: 0.3,
+    elevation: 5,
   },
   settingsIcon: { fontSize: 20 },
 
@@ -1077,54 +1173,75 @@ const styles = StyleSheet.create({
   },
   manageBtn: {
     paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.borderColor,
+    borderRadius: Radius.full, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
-  manageBtnText: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.textMuted },
+  manageBtnText: { fontFamily: Fonts.bold, fontSize: 12, color: 'rgba(240,235,248,0.65)' },
   collectionsCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.cardBg,
     borderRadius: Radius.xl, padding: Spacing.md,
-    borderWidth: 1, borderColor: Colors.borderColor,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
     overflow: 'hidden', gap: 12,
+    // Glass float
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 18,
+    shadowOpacity: 0.22,
+    elevation: 8,
   },
   collectionsCardEmoji: { fontSize: 28 },
   collectionsCardText:  { flex: 1 },
-  collectionsCardTitle: { fontFamily: Fonts.extraBold, fontSize: 15, color: Colors.moonlightCream },
-  collectionsCardSubtitle: { fontFamily: Fonts.regular, fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  collectionsCardArrow: { fontSize: 22, color: Colors.textMuted, fontFamily: Fonts.bold },
+  collectionsCardTitle: { fontFamily: Fonts.extraBold, fontSize: 15, color: '#FFFFFF' },
+  collectionsCardSubtitle: { fontFamily: Fonts.regular, fontSize: 12, color: 'rgba(240,235,248,0.55)', marginTop: 2 },
+  collectionsCardArrow: { fontSize: 22, color: 'rgba(240,235,248,0.45)', fontFamily: Fonts.bold },
 
   // Child card
   childCard: {
-    backgroundColor: Colors.cardBg,
     borderRadius: Radius.xl,
     padding: Spacing.lg,
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.14)',
     marginBottom: Spacing.lg,
     overflow: 'hidden',
+    // Glass float
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 22,
+    shadowOpacity: 0.28,
+    elevation: 10,
   },
   childCardHeader:  { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  childAvatar:      { width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.softPurple, alignItems: 'center', justifyContent: 'center' },
+  childAvatar:      {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: 'rgba(107,72,184,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.20)',
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 10,
+    shadowOpacity: 0.5,
+  },
   childAvatarEmoji: { fontFamily: Fonts.extraBold, fontSize: 22, color: '#fff' },
-  childName:        { fontFamily: Fonts.extraBold, fontSize: 18, color: Colors.moonlightCream },
-  childAge:         { fontFamily: Fonts.regular, fontSize: 13, color: Colors.textMuted },
+  childName:        { fontFamily: Fonts.extraBold, fontSize: 18, color: '#FFFFFF', letterSpacing: 0.2 },
+  childAge:         { fontFamily: Fonts.regular, fontSize: 13, color: 'rgba(240,235,248,0.55)' },
   editChildButton:  {
     marginLeft: 'auto',
     paddingHorizontal: 14, paddingVertical: 6,
-    backgroundColor: 'rgba(107,72,184,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: Radius.full,
-    borderWidth: 1, borderColor: Colors.softPurple,
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)',
   },
   editChildText:  { fontFamily: Fonts.bold, fontSize: 12, color: Colors.celestialGold },
   interestsRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   interestChip:   {
-    backgroundColor: 'rgba(255,215,0,0.1)',
+    backgroundColor: 'rgba(255,215,0,0.09)',
     borderRadius: Radius.full,
     paddingHorizontal: 10, paddingVertical: 4,
-    borderWidth: 1, borderColor: 'rgba(255,215,0,0.3)',
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)',
   },
   interestChipText: { fontFamily: Fonts.medium, fontSize: 12, color: Colors.celestialGold },
-  moreInterests:    { fontFamily: Fonts.medium, fontSize: 12, color: Colors.textMuted, alignSelf: 'center' },
+  moreInterests:    { fontFamily: Fonts.medium, fontSize: 12, color: 'rgba(240,235,248,0.45)', alignSelf: 'center' },
 
   // Active Voice Banner
   activVoiceBanner: {
@@ -1134,9 +1251,15 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     marginBottom: Spacing.lg,
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.14)',
     overflow: 'hidden',
     gap: 8,
+    // Glass float
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 14,
+    shadowOpacity: 0.22,
+    elevation: 6,
   },
   activVoiceBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   activeVoiceDot: {
@@ -1144,26 +1267,29 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.successGreen,
     shadowColor: Colors.successGreen,
     shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 4, shadowOpacity: 0.8,
+    shadowRadius: 6, shadowOpacity: 0.9,
   },
-  activeVoiceLabel: { fontFamily: Fonts.regular, fontSize: 11, color: Colors.textMuted },
-  activeVoiceName:  { fontFamily: Fonts.extraBold, fontSize: 15, color: Colors.moonlightCream },
+  activeVoiceLabel: { fontFamily: Fonts.regular, fontSize: 11, color: 'rgba(240,235,248,0.55)' },
+  activeVoiceName:  { fontFamily: Fonts.extraBold, fontSize: 15, color: '#FFFFFF' },
   switchVoiceBtn:   {
     paddingHorizontal: 12, paddingVertical: 6,
-    backgroundColor: 'rgba(107,72,184,0.3)',
+    backgroundColor: 'rgba(255,215,0,0.10)',
     borderRadius: Radius.full,
-    borderWidth: 1, borderColor: Colors.softPurple,
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)',
   },
   switchVoiceText: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.celestialGold },
 
-  // Create Story CTA
+  // Create Story CTA — floating gold glow button
   createStoryButton: {
     borderRadius: Radius.full,
-    overflow: 'hidden',
+    overflow: 'visible',
+    // Outer glow
     shadowColor: Colors.celestialGold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 14, shadowOpacity: 0.35,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 24,
+    shadowOpacity: 0.55,
+    elevation: 14,
+    marginBottom: Spacing.sm,
   },
   createStoryGradient: {
     flexDirection: 'row',
@@ -1171,6 +1297,9 @@ const styles = StyleSheet.create({
     paddingVertical: 18, paddingHorizontal: Spacing.lg,
     borderRadius: Radius.full,
     gap: 12,
+    // Inner top shine edge
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.30)',
   },
   createStoryIcon:      { fontSize: 26 },
   createStoryTextGroup: { flex: 1 },
@@ -1180,33 +1309,39 @@ const styles = StyleSheet.create({
 
   // Bookshelf section
   bookshelfSection: { marginBottom: Spacing.xl },
-  sectionTitle:     { fontFamily: Fonts.extraBold, fontSize: 18, color: Colors.moonlightCream, marginBottom: 12 },
+  sectionTitle:     { fontFamily: Fonts.extraBold, fontSize: 18, color: '#FFFFFF', marginBottom: 12, letterSpacing: 0.2 },
 
-  // Tab bar
+  // Tab bar — glass pill
   tabBar: {
     flexDirection:   'row',
-    backgroundColor: Colors.cardBg,
     borderRadius:    Radius.full,
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.14)',
     padding:         3,
     marginBottom:    16,
     position:        'relative',
     height:          46,
+    overflow:        'hidden',
+    // Float
+    shadowColor:     '#9B6FDE',
+    shadowOffset:    { width: 0, height: 4 },
+    shadowRadius:    12,
+    shadowOpacity:   0.2,
+    elevation:       5,
   },
   tabIndicator: {
     position:        'absolute',
     top:             3,
     bottom:          3,
     borderRadius:    Radius.full,
-    backgroundColor: Colors.deepPurple,
+    backgroundColor: 'rgba(255,255,255,0.13)',
     borderWidth:     1,
-    borderColor:     'rgba(107,72,184,0.6)',
-    shadowColor:     Colors.softPurple,
+    borderColor:     'rgba(255,255,255,0.22)',
+    shadowColor:     '#9B6FDE',
     shadowOffset:    { width: 0, height: 2 },
-    shadowOpacity:   0.4,
-    shadowRadius:    6,
-    elevation:       3,
+    shadowOpacity:   0.35,
+    shadowRadius:    8,
+    elevation:       4,
   },
   tabButton: {
     justifyContent: 'center',
@@ -1217,66 +1352,92 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontFamily: Fonts.bold,
     fontSize:   13,
-    color:      Colors.textMuted,
+    color:      'rgba(240,235,248,0.5)',
   },
   tabLabelActive: {
-    color: Colors.moonlightCream,
+    color: '#FFFFFF',
   },
 
   // Horizontal story list
   horizontalList: { paddingRight: Spacing.lg, gap: 12 },
 
-  // Story card (horizontal)
+  // Story card (horizontal) — Crystal Night glass tile
   storyCard: {
-    backgroundColor: Colors.cardBg,
     borderRadius: Radius.xl,
     padding: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.14)',
     overflow: 'hidden',
     minHeight: 160,
     justifyContent: 'flex-start',
+    // Floating glass
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 18,
+    shadowOpacity: 0.28,
+    elevation: 8,
   },
   storyCardEmojiBg: {
     width: 48, height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+    // Glass sphere look
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    shadowOpacity: 0.4,
+  },
+  storyCardEmojiGlow: {
+    position: 'absolute',
+    top: 0, left: '15%', right: '15%',
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderRadius: 1,
   },
   storyCardEmoji:  { fontSize: 26 },
-  storyCardTitle:  { fontFamily: Fonts.bold, fontSize: 13, color: Colors.moonlightCream, flex: 1, lineHeight: 18 },
+  storyCardTitle:  { fontFamily: Fonts.bold, fontSize: 13, color: '#FFFFFF', flex: 1, lineHeight: 18 },
   storyCardPlay:   { fontFamily: Fonts.bold, fontSize: 11, marginTop: 6 },
   heartBtn:        { position: 'absolute', top: 8, right: 8, padding: 4 },
   heartIcon:       { fontSize: 18 },
   generatingRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   generatingDot:   { width: 6, height: 6, borderRadius: 3 },
-  generatingText:  { fontFamily: Fonts.regular, fontSize: 11, color: Colors.textMuted },
+  generatingText:  { fontFamily: Fonts.regular, fontSize: 11, color: 'rgba(240,235,248,0.5)' },
 
   // Empty inline
   emptyInline: {
-    backgroundColor: Colors.cardBg,
     borderRadius: Radius.xl,
     padding: Spacing.xl,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     gap: 8,
   },
   emptyInlineEmoji: { fontSize: 28 },
-  emptyInlineText:  { fontFamily: Fonts.medium, fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
+  emptyInlineText:  { fontFamily: Fonts.medium, fontSize: 13, color: 'rgba(240,235,248,0.55)', textAlign: 'center' },
 
   // Quick actions
   quickActions:        { flexDirection: 'row', gap: 12, marginTop: Spacing.sm },
-  quickAction:         { flex: 1, borderRadius: Radius.xl, overflow: 'hidden' },
+  quickAction:         { flex: 1, borderRadius: Radius.xl },
+  quickActionGlassWrapper: {
+    flex: 1, borderRadius: Radius.xl, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 14,
+    shadowOpacity: 0.22,
+    elevation: 6,
+  },
   quickActionGradient: { paddingVertical: Spacing.lg, alignItems: 'center', gap: 8, borderRadius: Radius.xl },
   quickActionEmoji:    { fontSize: 28 },
-  quickActionText:     { fontFamily: Fonts.bold, fontSize: 14, color: '#fff' },
+  quickActionText:     { fontFamily: Fonts.bold, fontSize: 14, color: '#FFFFFF' },
 
   // Voice Selector Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
@@ -1287,7 +1448,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderBottomWidth: 0,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.18)',
+    // Glass float
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: -8 },
+    shadowRadius: 28,
+    shadowOpacity: 0.4,
+    elevation: 16,
   },
   voiceModalBody: {
     padding: Spacing.xl,
@@ -1297,37 +1464,37 @@ const styles = StyleSheet.create({
   voiceModalHandle: {
     width: 40, height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.borderColor,
+    backgroundColor: 'rgba(255,255,255,0.20)',
     alignSelf: 'center',
     marginBottom: 4,
   },
-  voiceModalTitle:    { fontFamily: Fonts.extraBold, fontSize: 20, color: Colors.moonlightCream, textAlign: 'center' },
-  voiceModalSubtitle: { fontFamily: Fonts.regular, fontSize: 13, color: Colors.textMuted, textAlign: 'center', marginBottom: 4 },
+  voiceModalTitle:    { fontFamily: Fonts.extraBold, fontSize: 20, color: '#FFFFFF', textAlign: 'center', letterSpacing: 0.3 },
+  voiceModalSubtitle: { fontFamily: Fonts.regular, fontSize: 13, color: 'rgba(240,235,248,0.55)', textAlign: 'center', marginBottom: 4 },
   voiceList:          { gap: 10 },
   voiceOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: Radius.xl,
     padding: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.12)',
     gap: 12,
     overflow: 'hidden',
   },
-  voiceOptionActive:  { borderColor: Colors.celestialGold },
+  voiceOptionActive:  { borderColor: 'rgba(255,215,0,0.45)', backgroundColor: 'rgba(255,215,0,0.07)' },
   voiceOptionEmoji:   { fontSize: 28 },
   voiceOptionInfo:    { flex: 1 },
-  voiceOptionName:    { fontFamily: Fonts.extraBold, fontSize: 16, color: Colors.moonlightCream },
-  voiceOptionStatus:  { fontFamily: Fonts.regular, fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  voiceOptionArrow:   { fontSize: 20, color: Colors.textMuted },
+  voiceOptionName:    { fontFamily: Fonts.extraBold, fontSize: 16, color: '#FFFFFF' },
+  voiceOptionStatus:  { fontFamily: Fonts.regular, fontSize: 12, color: 'rgba(240,235,248,0.55)', marginTop: 2 },
+  voiceOptionArrow:   { fontSize: 20, color: 'rgba(240,235,248,0.35)' },
   activeIndicator: {
-    backgroundColor: 'rgba(255,215,0,0.2)',
+    backgroundColor: 'rgba(255,215,0,0.15)',
     borderRadius: Radius.full,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderWidth: 1,
-    borderColor: Colors.celestialGold,
+    borderColor: 'rgba(255,215,0,0.4)',
   },
   activeIndicatorText: { fontFamily: Fonts.bold, fontSize: 11, color: Colors.celestialGold },
   addAnotherVoice:     {
@@ -1335,37 +1502,38 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderRadius: Radius.full,
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.14)',
     borderStyle: 'dashed',
     marginTop: 4,
   },
-  addAnotherVoiceText: { fontFamily: Fonts.bold, fontSize: 13, color: Colors.textMuted },
+  addAnotherVoiceText: { fontFamily: Fonts.bold, fontSize: 13, color: 'rgba(240,235,248,0.5)' },
   addVoiceCard: {
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: Radius.xl,
     padding: Spacing.xl,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: Colors.borderColor,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
     borderStyle: 'dashed',
     gap: 8,
   },
   addVoiceEmoji: { fontSize: 32 },
-  addVoiceText:  { fontFamily: Fonts.bold, fontSize: 15, color: Colors.textMuted },
+  addVoiceText:  { fontFamily: Fonts.bold, fontSize: 15, color: 'rgba(240,235,248,0.5)' },
   voiceModalClose: {
     alignItems: 'center',
     paddingVertical: Spacing.md,
     marginTop: 4,
     borderRadius: Radius.full,
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,215,0,0.28)',
+    backgroundColor: 'rgba(255,215,0,0.07)',
   },
-  voiceModalCloseText: { fontFamily: Fonts.bold, fontSize: 14, color: Colors.textMuted },
+  voiceModalCloseText: { fontFamily: Fonts.bold, fontSize: 14, color: Colors.celestialGold },
 
   // ── Welcome Home Greeting
   greetingOverlay: {
     flex:            1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.78)',
     alignItems:      'center',
     justifyContent:  'center',
     padding:         Spacing.xl,
@@ -1373,31 +1541,32 @@ const styles = StyleSheet.create({
   greetingCard: {
     width:           '100%',
     borderRadius:    Radius.xl,
-    borderWidth:     1.5,
-    borderColor:     'rgba(255,215,0,0.3)',
+    borderWidth:     1,
+    borderColor:     'rgba(255,215,0,0.32)',
     padding:         Spacing.xl,
     alignItems:      'center',
     overflow:        'hidden',
     gap:             Spacing.md,
+    // Deep gold float
     shadowColor:     Colors.celestialGold,
-    shadowOffset:    { width: 0, height: 12 },
-    shadowOpacity:   0.25,
-    shadowRadius:    32,
-    elevation:       20,
+    shadowOffset:    { width: 0, height: 16 },
+    shadowOpacity:   0.40,
+    shadowRadius:    40,
+    elevation:       22,
   },
   greetingCornerTL: {
     position: 'absolute', top: 0, left: 0,
     width: 50, height: 50,
     borderTopLeftRadius: Radius.xl,
     borderTopWidth: 2, borderLeftWidth: 2,
-    borderColor: 'rgba(255,215,0,0.45)',
+    borderColor: 'rgba(255,215,0,0.50)',
   },
   greetingCornerBR: {
     position: 'absolute', bottom: 0, right: 0,
     width: 50, height: 50,
     borderBottomRightRadius: Radius.xl,
     borderBottomWidth: 2, borderRightWidth: 2,
-    borderColor: 'rgba(255,215,0,0.45)',
+    borderColor: 'rgba(255,215,0,0.50)',
   },
   greetingNarratorEmoji: { fontSize: 52 },
   greetingNarratorName: {
@@ -1408,13 +1577,13 @@ const styles = StyleSheet.create({
   greetingDivider: {
     fontFamily: Fonts.medium,
     fontSize:   16,
-    color:      'rgba(255,215,0,0.4)',
+    color:      'rgba(255,215,0,0.45)',
     letterSpacing: 6,
   },
   greetingMessage: {
     fontFamily: Fonts.medium,
     fontSize:   16,
-    color:      Colors.moonlightCream,
+    color:      '#F0EBF8',
     textAlign:  'center',
     lineHeight: 26,
     fontStyle:  'italic',
@@ -1426,6 +1595,12 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems:    'center',
     marginTop:     Spacing.sm,
+    // Glow float
+    shadowColor:   Colors.celestialGold,
+    shadowOffset:  { width: 0, height: 6 },
+    shadowRadius:  20,
+    shadowOpacity: 0.55,
+    elevation:     12,
   },
   greetingCTAText: {
     fontFamily: Fonts.extraBold,
@@ -1438,6 +1613,6 @@ const styles = StyleSheet.create({
   greetingDismissText: {
     fontFamily: Fonts.medium,
     fontSize:   13,
-    color:      Colors.textMuted,
+    color:      'rgba(240,235,248,0.45)',
   },
 });

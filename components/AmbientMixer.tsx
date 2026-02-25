@@ -196,14 +196,25 @@ function VolumeSlider({
             fillStyle,
           ]}
         />
-        {/* Thumb */}
+        {/* Physical glass thumb */}
         <Animated.View
           style={[
             sliderStyles.thumbWrapper,
             fillStyle,
           ]}
         >
-          <View style={[sliderStyles.thumb, { borderColor: accentColor, shadowColor: accentColor }]} />
+          <View style={[sliderStyles.thumb, { borderColor: 'rgba(255,255,255,0.45)', shadowColor: accentColor }]}>
+            {/* Sphere specular highlight */}
+            <View style={{
+              position:   'absolute',
+              top:        3,
+              left:       4,
+              width:      12,
+              height:     5,
+              borderRadius: 4,
+              backgroundColor: 'rgba(255,255,255,0.45)',
+            }} />
+          </View>
         </Animated.View>
       </View>
       <Text style={sliderStyles.icon}>🔊</Text>
@@ -215,46 +226,71 @@ const sliderStyles = StyleSheet.create({
   wrapper: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           10,
+    gap:           12,
     paddingHorizontal: 4,
   },
-  icon: { fontSize: 16 },
+  icon: { fontSize: 17 },
+
+  // Physical glass slider: thick grooved channel
   track: {
-    flex:   1,
-    height: 40,
+    flex:           1,
+    height:         48,
     justifyContent: 'center',
   },
+
+  // Outer groove — the carved glass channel
   trackBg: {
     position:        'absolute',
     left:            0,
     right:           0,
-    height:          6,
-    borderRadius:    3,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    height:          12,
+    borderRadius:    6,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth:     1,
+    borderColor:     'rgba(255,255,255,0.08)',
+    // Inset shadow effect via inner border
+    shadowColor:     '#000',
+    shadowOffset:    { width: 0, height: 2 },
+    shadowRadius:    4,
+    shadowOpacity:   0.5,
+    elevation:       2,
   },
+
+  // Glass fill — lit portion of the track
   fill: {
     position:     'absolute',
     left:         0,
-    height:       6,
-    borderRadius: 3,
+    height:       12,
+    borderRadius: 6,
     minWidth:     6,
+    // Top edge highlight for glass depth
+    borderTopWidth:  1,
+    borderTopColor:  'rgba(255,255,255,0.30)',
   },
+
+  // Thumb wrapper
   thumbWrapper: {
-    position: 'absolute',
-    left:     0,
+    position:   'absolute',
+    left:       0,
     alignItems: 'flex-end',
   },
+
+  // Physical glass thumb — frosted crystal orb
   thumb: {
-    width:         22,
-    height:        22,
-    borderRadius:  11,
-    backgroundColor: Colors.midnightNavy,
-    borderWidth:   2,
-    shadowOffset:  { width: 0, height: 0 },
-    shadowRadius:  8,
-    shadowOpacity: 0.8,
-    elevation:     4,
-    marginRight:   -11,
+    width:         30,
+    height:        30,
+    borderRadius:  15,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth:   1.5,
+    borderColor:   'rgba(255,255,255,0.45)',
+    // Top highlight for sphere effect
+    shadowOffset:  { width: 0, height: -1 },
+    shadowRadius:  12,
+    shadowOpacity: 0.9,
+    elevation:     8,
+    marginRight:   -15,
+    // Inner glass texture
+    overflow:      'hidden',
   },
 });
 
@@ -442,12 +478,17 @@ export default function AmbientMixer({ visible, onClose }: AmbientMixerProps) {
         <Animated.View style={[styles.sheet, sheetStyle]}>
           <TouchableOpacity activeOpacity={1} onPress={() => { /* prevent close */ }}>
             {Platform.OS !== 'web' ? (
-              <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
+              <BlurView intensity={55} tint="dark" style={StyleSheet.absoluteFill} />
             ) : null}
             <LinearGradient
-              colors={['rgba(37,38,85,0.97)', 'rgba(13,14,36,0.98)']}
+              colors={['rgba(20,8,50,0.96)', 'rgba(14,8,32,0.99)']}
               style={[StyleSheet.absoluteFill, { borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl }]}
             />
+            {/* Top reflective edge */}
+            <View style={{
+              position: 'absolute', top: 0, left: '15%', right: '15%', height: 1,
+              backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 1,
+            }} />
 
             <View style={styles.sheetContent}>
               {/* Handle */}
@@ -566,7 +607,7 @@ export default function AmbientMixer({ visible, onClose }: AmbientMixerProps) {
 const styles = StyleSheet.create({
   overlay: {
     flex:            1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     justifyContent:  'flex-end',
   },
   sheet: {
@@ -575,7 +616,13 @@ const styles = StyleSheet.create({
     overflow:             'hidden',
     borderWidth:          1,
     borderBottomWidth:    0,
-    borderColor:          'rgba(255,255,255,0.12)',
+    borderColor:          'rgba(255,255,255,0.18)',
+    // Glass float upward shadow
+    shadowColor:          '#9B6FDE',
+    shadowOffset:         { width: 0, height: -10 },
+    shadowRadius:         30,
+    shadowOpacity:        0.40,
+    elevation:            18,
   },
   sheetContent: {
     padding:       Spacing.xl,
@@ -583,10 +630,10 @@ const styles = StyleSheet.create({
     gap:           Spacing.lg,
   },
   handle: {
-    width:           40,
+    width:           44,
     height:          4,
     borderRadius:    2,
-    backgroundColor: Colors.borderColor,
+    backgroundColor: 'rgba(255,255,255,0.22)',
     alignSelf:       'center',
     marginBottom:    4,
   },
@@ -596,18 +643,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sheetTitle: {
-    fontFamily: Fonts.extraBold,
-    fontSize:   20,
-    color:      Colors.moonlightCream,
+    fontFamily:    Fonts.extraBold,
+    fontSize:      20,
+    color:         '#FFFFFF',
+    letterSpacing: 0.3,
   },
   sheetSubtitle: {
     fontFamily: Fonts.regular,
     fontSize:   13,
-    color:      Colors.textMuted,
+    color:      'rgba(240,235,248,0.55)',
     marginTop:  2,
   },
 
-  // Sound grid
+  // Sound grid — glass cards
   soundGrid: {
     flexDirection: 'row',
     flexWrap:      'wrap',
@@ -615,25 +663,31 @@ const styles = StyleSheet.create({
   },
   soundCard: {
     width:           (W - Spacing.xl * 2 - 12) / 2,
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius:    Radius.xl,
     padding:         Spacing.md,
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.12)',
     overflow:        'hidden',
     minHeight:       100,
     gap:             4,
+    // Glass float
+    shadowColor:     '#9B6FDE',
+    shadowOffset:    { width: 0, height: 4 },
+    shadowRadius:    12,
+    shadowOpacity:   0.18,
+    elevation:       5,
   },
   soundEmoji: { fontSize: 28 },
   soundLabel: {
     fontFamily: Fonts.extraBold,
     fontSize:   14,
-    color:      Colors.moonlightCream,
+    color:      '#FFFFFF',
   },
   soundDesc: {
     fontFamily: Fonts.regular,
     fontSize:   11,
-    color:      Colors.textMuted,
+    color:      'rgba(240,235,248,0.50)',
     lineHeight: 15,
   },
   playingDot: {
@@ -646,7 +700,7 @@ const styles = StyleSheet.create({
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(13,14,36,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     borderRadius:    Radius.xl,
     alignItems:      'center',
     justifyContent:  'center',
@@ -658,14 +712,20 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
   },
 
-  // Volume section
+  // Volume section — physical glass container
   volumeSection: {
-    backgroundColor: Colors.cardBg,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius:    Radius.xl,
     padding:         Spacing.md,
     borderWidth:     1,
-    borderColor:     Colors.borderColor,
+    borderColor:     'rgba(255,255,255,0.12)',
     gap:             Spacing.sm,
+    // Grooved glass inset
+    shadowColor:     '#000',
+    shadowOffset:    { width: 0, height: 2 },
+    shadowRadius:    8,
+    shadowOpacity:   0.3,
+    elevation:       3,
   },
   volumeHeader: {
     flexDirection:  'row',
@@ -675,7 +735,8 @@ const styles = StyleSheet.create({
   volumeLabel: {
     fontFamily: Fonts.bold,
     fontSize:   14,
-    color:      Colors.moonlightCream,
+    color:      '#FFFFFF',
+    letterSpacing: 0.2,
   },
   volumeValue: {
     fontFamily: Fonts.extraBold,
@@ -684,7 +745,7 @@ const styles = StyleSheet.create({
   volumeHint: {
     fontFamily: Fonts.regular,
     fontSize:   11,
-    color:      Colors.textMuted,
+    color:      'rgba(240,235,248,0.45)',
     textAlign:  'center',
     marginTop:  4,
   },
@@ -700,12 +761,13 @@ const styles = StyleSheet.create({
     borderRadius:   Radius.full,
     alignItems:     'center',
     borderWidth:    1,
-    borderColor:    Colors.borderColor,
+    borderColor:    'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   stopBtnText: {
     fontFamily: Fonts.bold,
     fontSize:   14,
-    color:      Colors.textMuted,
+    color:      'rgba(240,235,248,0.55)',
   },
   doneBtn: {
     flex:            1,
@@ -713,6 +775,12 @@ const styles = StyleSheet.create({
     borderRadius:    Radius.full,
     alignItems:      'center',
     overflow:        'hidden',
+    // Gold float
+    shadowColor:     Colors.celestialGold,
+    shadowOffset:    { width: 0, height: 5 },
+    shadowRadius:    16,
+    shadowOpacity:   0.50,
+    elevation:       10,
   },
   doneBtnFull: {
     flex: 1,
