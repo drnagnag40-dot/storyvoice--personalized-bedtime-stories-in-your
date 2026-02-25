@@ -24,13 +24,17 @@ import Animated, {
   withTiming,
   withDelay,
   withSpring,
+  withRepeat,
+  withSequence,
   Easing,
   interpolate,
   Extrapolation,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import BreathingGradient from '@/components/BreathingGradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
+import StardustLoader from '@/components/StardustLoader';
 import ParentalGate from '@/components/ParentalGate';
 import MagicSyncModal, { type MagicSyncState } from '@/components/MagicSyncModal';
 import NarratorGallery from '@/components/NarratorGallery';
@@ -245,6 +249,169 @@ function TabSwitcher({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Floating empty-state for Story Library
+// ─────────────────────────────────────────────────────────────────────────────
+function EmptyStoryLibrary({ onCreateStory }: { onCreateStory: () => void }) {
+  const floatY      = useSharedValue(0);
+  const glowPulse   = useSharedValue(0.6);
+  const btnScale    = useSharedValue(1);
+
+  useEffect(() => {
+    // Gentle float: 8 px up/down, 3-second cycle
+    floatY.value = withRepeat(
+      withSequence(
+        withTiming(-10, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+        withTiming(  0, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+      false,
+    );
+    // Crystal button glow breathing
+    glowPulse.value = withRepeat(
+      withSequence(
+        withTiming(1,   { duration: 2000, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0.5, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+      false,
+    );
+    return () => {
+      cancelAnimation(floatY);
+      cancelAnimation(glowPulse);
+      cancelAnimation(btnScale);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const floatStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: floatY.value }],
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    shadowOpacity: glowPulse.value * 0.65,
+    shadowRadius:  interpolate(glowPulse.value, [0.5, 1], [8, 24], Extrapolation.CLAMP),
+  }));
+
+  const btnPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: btnScale.value }],
+  }));
+
+  const handlePressIn = () => {
+    btnScale.value = withTiming(0.95, { duration: 100 });
+  };
+  const handlePressOut = () => {
+    btnScale.value = withSpring(1, { damping: 10, stiffness: 300 });
+  };
+
+  return (
+    <View style={emptyStyles.wrapper}>
+      <Animated.View style={[emptyStyles.floatGroup, floatStyle]}>
+        <StardustLoader size={52} color={Colors.celestialGold} />
+        <Text style={emptyStyles.title}>Your Story Library</Text>
+        <Text style={emptyStyles.subtitle}>
+          Each night a new adventure{'\n'}waits to be written just for you ✨
+        </Text>
+      </Animated.View>
+
+      {/* Crystal "Begin Your First Adventure" button */}
+      <Animated.View style={[emptyStyles.crystalBtnWrapper, glowStyle, btnPressStyle]}>
+        <TouchableOpacity
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            onCreateStory();
+          }}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          activeOpacity={1}
+        >
+          {/* Frosted glass base */}
+          {Platform.OS !== 'web' && (
+            <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+          )}
+          <LinearGradient
+            colors={[Colors.celestialGold, Colors.softGold, '#FFA500']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={emptyStyles.crystalBtnGradient}
+          >
+            {/* Specular top-left edge */}
+            <View style={emptyStyles.crystalBtnEdge} />
+            <Text style={emptyStyles.crystalBtnIcon}>🪄</Text>
+            <Text style={emptyStyles.crystalBtnLabel}>Begin Your First Adventure</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
+  );
+}
+
+const emptyStyles = StyleSheet.create({
+  wrapper: {
+    alignItems:   'center',
+    paddingVertical: Spacing.xl,
+    gap:          Spacing.xl,
+  },
+  floatGroup: {
+    alignItems: 'center',
+    gap:        Spacing.md,
+  },
+  title: {
+    fontFamily:      Fonts.extraBold,
+    fontSize:        20,
+    color:           '#FFFFFF',
+    textAlign:       'center',
+    letterSpacing:   0.3,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset:{ width: 0, height: 1 },
+    textShadowRadius:8,
+  },
+  subtitle: {
+    fontFamily: Fonts.regular,
+    fontSize:   14,
+    color:      'rgba(240,235,248,0.60)',
+    textAlign:  'center',
+    lineHeight: 22,
+  },
+  crystalBtnWrapper: {
+    borderRadius: Radius.full,
+    overflow:     'hidden',
+    borderWidth:  1.5,
+    borderColor:  'rgba(255,215,0,0.55)',
+    shadowColor:  Colors.celestialGold,
+    shadowOffset: { width: 0, height: 0 },
+    elevation:    14,
+  },
+  crystalBtnGradient: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    paddingVertical:   18,
+    paddingHorizontal: 32,
+    gap:               10,
+    borderRadius:      Radius.full,
+    overflow:          'hidden',
+  },
+  crystalBtnEdge: {
+    position:        'absolute',
+    top:             0,
+    left:            '15%',
+    right:           '15%',
+    height:          1,
+    backgroundColor: 'rgba(255,255,255,0.50)',
+    borderRadius:    1,
+  },
+  crystalBtnIcon:  { fontSize: 22 },
+  crystalBtnLabel: {
+    fontFamily:      Fonts.black,
+    fontSize:        16,
+    color:           Colors.deepSpace,
+    letterSpacing:   0.3,
+    textShadowColor: 'rgba(255,255,255,0.25)',
+    textShadowOffset:{ width: 0, height: 1 },
+    textShadowRadius:3,
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
@@ -310,8 +477,12 @@ export default function HomeScreen() {
   const prevHadFavoritesRef = useRef(false);
 
   // Entrance animations
+  // Entrance animations — opacity + subtle scale gives glass panels a
+  // "frosting / crystallising" feel as they materialise over the background
   const headerOpacity  = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
+  const headerScale    = useSharedValue(1.04);
+  const contentScale   = useSharedValue(1.03);
 
   // ── Derived data ─────────────────────────────────────────────────────────────
   const recentStories   = stories.slice(0, 10);
@@ -396,8 +567,11 @@ export default function HomeScreen() {
 
   useEffect(() => {
     void loadData();
-    headerOpacity.value  = withTiming(1, { duration: 600 });
-    contentOpacity.value = withDelay(300, withTiming(1, { duration: 700 }));
+    // Opacity + scale fade-in: glass panels crystallise into view
+    headerOpacity.value  = withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) });
+    headerScale.value    = withTiming(1, { duration: 700, easing: Easing.out(Easing.back(1.05)) });
+    contentOpacity.value = withDelay(280, withTiming(1, { duration: 700, easing: Easing.out(Easing.quad) }));
+    contentScale.value   = withDelay(280, withTiming(1, { duration: 800, easing: Easing.out(Easing.back(1.05)) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadData]);
 
@@ -584,8 +758,14 @@ export default function HomeScreen() {
     transform: [{ translateY: interpolate(scrollY.value, [0, 400], [0, -10], Extrapolation.CLAMP) }],
   }));
 
-  const headerStyle  = useAnimatedStyle(() => ({ opacity: headerOpacity.value }));
-  const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
+  const headerStyle  = useAnimatedStyle(() => ({
+    opacity:   headerOpacity.value,
+    transform: [{ scale: headerScale.value }],
+  }));
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity:   contentOpacity.value,
+    transform: [{ scale: contentScale.value }],
+  }));
   const activeVoice  = voices.find((v) => v.id === activeVoiceId) ?? voices[0] ?? null;
 
   const greetingStyle = useAnimatedStyle(() => ({
@@ -816,11 +996,9 @@ export default function HomeScreen() {
 
           {/* Empty state when no stories at all */}
           {stories.length === 0 && (
-            <View style={styles.emptyInline}>
-              <Text style={styles.emptyInlineText}>
-                No stories yet — tap above to create your first one! ✨
-              </Text>
-            </View>
+            <EmptyStoryLibrary
+              onCreateStory={() => router.push('/(main)/create-story')}
+            />
           )}
 
           {/* ── Collections Section ─────────────────────────────────────────── */}
@@ -1133,8 +1311,14 @@ const styles = StyleSheet.create({
 
   // Header
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.xl },
-  greeting:     { fontFamily: Fonts.regular, fontSize: 14, color: 'rgba(240,235,248,0.55)' },
-  userName:     { fontFamily: Fonts.extraBold, fontSize: 22, color: '#FFFFFF', letterSpacing: 0.2 },
+  greeting:     {
+    fontFamily: Fonts.regular, fontSize: 14, color: 'rgba(240,235,248,0.60)',
+    textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  userName:     {
+    fontFamily: Fonts.extraBold, fontSize: 22, color: '#FFFFFF', letterSpacing: 0.2,
+    textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
+  },
   headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
   proButton: {
     paddingHorizontal: 12,
@@ -1309,7 +1493,10 @@ const styles = StyleSheet.create({
 
   // Bookshelf section
   bookshelfSection: { marginBottom: Spacing.xl },
-  sectionTitle:     { fontFamily: Fonts.extraBold, fontSize: 18, color: '#FFFFFF', marginBottom: 12, letterSpacing: 0.2 },
+  sectionTitle: {
+    fontFamily: Fonts.extraBold, fontSize: 18, color: '#FFFFFF', marginBottom: 12, letterSpacing: 0.2,
+    textShadowColor: 'rgba(0,0,0,0.50)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
+  },
 
   // Tab bar — glass pill
   tabBar: {
@@ -1397,7 +1584,10 @@ const styles = StyleSheet.create({
     borderRadius: 1,
   },
   storyCardEmoji:  { fontSize: 26 },
-  storyCardTitle:  { fontFamily: Fonts.bold, fontSize: 13, color: '#FFFFFF', flex: 1, lineHeight: 18 },
+  storyCardTitle:  {
+    fontFamily: Fonts.bold, fontSize: 13, color: '#FFFFFF', flex: 1, lineHeight: 18,
+    textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
   storyCardPlay:   { fontFamily: Fonts.bold, fontSize: 11, marginTop: 6 },
   heartBtn:        { position: 'absolute', top: 8, right: 8, padding: 4 },
   heartIcon:       { fontSize: 18 },

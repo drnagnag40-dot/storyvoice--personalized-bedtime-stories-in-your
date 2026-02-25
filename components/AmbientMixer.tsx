@@ -33,6 +33,7 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
+import StardustLoader from '@/components/StardustLoader';
 
 const { width: W } = Dimensions.get('window');
 
@@ -311,6 +312,8 @@ export default function AmbientMixer({ visible, onClose }: AmbientMixerProps) {
   // expo-av refs
   const soundRef          = useRef<Audio.Sound | null>(null);
   const crossfadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Haptic throttle for slider
+  const lastHapticRef     = useRef<number>(0);
 
   // Sheet slide animation
   const slideY = useSharedValue(300);
@@ -348,7 +351,7 @@ export default function AmbientMixer({ visible, onClose }: AmbientMixerProps) {
 
     try {
       // Fade out before unload
-      const steps = 10;
+      const steps = 12;
       const stepTime = fadeDuration / steps;
       for (let i = steps; i >= 0; i--) {
         try { await sound.setVolumeAsync((i / steps) * volume); } catch { break; }
@@ -359,6 +362,26 @@ export default function AmbientMixer({ visible, onClose }: AmbientMixerProps) {
       await sound.unloadAsync();
     } catch {
       // ignore cleanup errors
+    }
+  }, [volume]);
+
+  /**
+   * Fire-and-forget: fade out and unload a detached sound object.
+   * Used for true crossfade — new sound plays while old fades out concurrently.
+   */
+  const fadeOutAndUnload = useCallback(async (sound: Audio.Sound, fadeDuration: number) => {
+    try {
+      const steps = 12;
+      const stepTime = fadeDuration / steps;
+      for (let i = steps; i >= 0; i--) {
+        try { await sound.setVolumeAsync((i / steps) * volume); } catch { break; }
+        await new Promise((r) => setTimeout(r, stepTime));
+      }
+      sound.setOnPlaybackStatusUpdate(null);
+      await sound.stopAsync();
+      await sound.unloadAsync();
+    } catch {
+      // ignore cleanup errors during crossfade
     }
   }, [volume]);
 
@@ -407,22 +430,26 @@ export default function AmbientMixer({ visible, onClose }: AmbientMixerProps) {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (selectedId === soundscape.id && isPlaying) {
-      // Pause current
+      // Tap active soundscape → stop with fade out
       setIsPlaying(false);
-      await unloadCurrent(400);
+      await unloadCurrent(500);
       setSelectedId(null);
       return;
     }
 
     setSelectedId(soundscape.id);
 
-    // Crossfade: fade out old, fade in new
+    // True crossfade: detach current sound and fade it out concurrently
+    // while the new sound fades in. Both run simultaneously for smooth overlap.
     if (soundRef.current) {
-      await unloadCurrent(400);
+      const outgoing = soundRef.current;
+      soundRef.current = null; // detach so playSound owns the new slot
+      void fadeOutAndUnload(outgoing, 650); // fire-and-forget 650 ms fade-out
     }
 
+    // New sound fades in (600 ms) while old fades out – audible crossfade
     await playSound(soundscape);
-  }, [selectedId, isPlaying, unloadCurrent, playSound]);
+  }, [selectedId, isPlaying, unloadCurrent, fadeOutAndUnload, playSound]);
 
   // ── Volume change ────────────────────────────────────────────────────────
   const handleVolumeChange = useCallback(async (newVol: number) => {
@@ -430,7 +457,12 @@ export default function AmbientMixer({ visible, onClose }: AmbientMixerProps) {
     if (soundRef.current) {
       try { await soundRef.current.setVolumeAsync(newVol); } catch { /* ignore */ }
     }
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Throttle haptics to every 90 ms so the slider doesn't buzz continuously
+    const now = Date.now();
+    if (now - lastHapticRef.current > 90) {
+      lastHapticRef.current = now;
+      void Haptics.selectionAsync();
+    }
   }, []);
 
   // ── Stop all on close ─────────────────────────────────────────────────────
@@ -543,7 +575,7 @@ export default function AmbientMixer({ visible, onClose }: AmbientMixerProps) {
                       )}
                       {isLoading && sc.id === selectedId && (
                         <View style={styles.loadingOverlay}>
-                          <Text style={styles.loadingDots}>•••</Text>
+                          <StardustLoader size={28} color={sc.accentColor} />
                         </View>
                       )}
                     </TouchableOpacity>

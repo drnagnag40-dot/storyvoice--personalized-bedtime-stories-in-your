@@ -25,7 +25,6 @@ import {
   Modal,
   Alert,
   Image,
-  ActivityIndicator,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -50,6 +49,7 @@ import Animated, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarField from '@/components/StarField';
 import AmbientMixer from '@/components/AmbientMixer';
+import StardustLoader from '@/components/StardustLoader';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { toggleStoryFavorite, isSupabaseAvailable } from '@/lib/supabase';
 import { NARRATOR_PERSONALITIES, buildReflectionQuestionsPrompt, buildStoryBranchPrompt, type NarratorPersonality } from '@/lib/newell';
@@ -193,10 +193,11 @@ export default function PlayerScreen() {
   const sleepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateSubRef   = useRef<ReturnType<typeof AppState.addEventListener> | null>(null);
 
-  // ── Entrance animations ────────────────────────────────────────────────────
+  // ── Entrance animations — frosting glass-panel materialise effect ──────────
   const headerOpacity  = useSharedValue(0);
   const coverScale     = useSharedValue(0.92);
   const contentOpacity = useSharedValue(0);
+  const contentScale   = useSharedValue(1.04); // glass panel crystallises from slightly larger
   const controlsY      = useSharedValue(40);
 
   // ── Load story from AsyncStorage (Safe Mode) ───────────────────────────────
@@ -256,9 +257,11 @@ export default function PlayerScreen() {
   // ── Start entrance animations once story is loaded ─────────────────────────
   useEffect(() => {
     if (!isLoading && story) {
-      headerOpacity.value  = withTiming(1, { duration: 600 });
+      headerOpacity.value  = withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) });
       coverScale.value     = withDelay(200, withTiming(1, { duration: 700, easing: Easing.out(Easing.back(1.2)) }));
-      contentOpacity.value = withDelay(400, withTiming(1, { duration: 600 }));
+      // Glass panels fade + crystallise inward (scale 1.04 → 1)
+      contentOpacity.value = withDelay(400, withTiming(1, { duration: 650, easing: Easing.out(Easing.quad) }));
+      contentScale.value   = withDelay(400, withTiming(1, { duration: 750, easing: Easing.out(Easing.back(1.05)) }));
       controlsY.value      = withDelay(500, withTiming(0, { duration: 500, easing: Easing.out(Easing.quad) }));
 
       // Start breathing glow on the New Story button after controls appear
@@ -647,7 +650,10 @@ export default function PlayerScreen() {
   // ── Animated styles ────────────────────────────────────────────────────────
   const headerStyle   = useAnimatedStyle(() => ({ opacity: headerOpacity.value }));
   const coverStyle    = useAnimatedStyle(() => ({ transform: [{ scale: coverScale.value }] }));
-  const contentStyle  = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
+  const contentStyle  = useAnimatedStyle(() => ({
+    opacity:   contentOpacity.value,
+    transform: [{ scale: contentScale.value }],
+  }));
   const controlsStyle = useAnimatedStyle(() => ({
     opacity:   interpolate(controlsY.value, [40, 0], [0, 1]),
     transform: [{ translateY: controlsY.value }],
@@ -697,8 +703,8 @@ export default function PlayerScreen() {
         <BreathingGradient />
         <StarField count={40} />
         <View style={styles.centeredState}>
-          <Text style={styles.loadingMoon}>🌙</Text>
-          <Text style={styles.loadingText}>Opening your story…</Text>
+          <StardustLoader size={56} color={Colors.celestialGold} />
+          <Text style={styles.loadingText}>Sprinkling magic dust…</Text>
         </View>
       </View>
     );
@@ -713,19 +719,38 @@ export default function PlayerScreen() {
         <BreathingGradient />
         <StarField count={40} />
         <View style={styles.centeredState}>
-          <Text style={styles.errorEmoji}>📖</Text>
-          <Text style={styles.errorTitle}>Story Not Found</Text>
-          <Text style={styles.errorText}>{error ?? 'Please generate a story first.'}</Text>
+          {/* Frosted glass error panel */}
+          <View style={styles.errorGlassPanel}>
+            {Platform.OS !== 'web' && (
+              <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+            )}
+            <LinearGradient
+              colors={['rgba(30,10,60,0.88)', 'rgba(14,8,32,0.94)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            {/* Top shine */}
+            <View style={styles.errorGlassPanelEdge} />
+            <Text style={styles.errorEmoji}>🌙</Text>
+            <Text style={styles.errorTitle}>Oops, the story flew away!</Text>
+            <Text style={styles.errorText}>
+              {error
+                ? "The story couldn't be found. Let's create a brand-new adventure!"
+                : "No story here yet — tap the button below to begin the magic!"}
+            </Text>
+          </View>
           <TouchableOpacity
             style={styles.errorButton}
-            onPress={() => router.replace('/(main)/create-story')}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.replace('/(main)/create-story');
+            }}
           >
             <LinearGradient
               colors={[Colors.celestialGold, Colors.softGold]}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={styles.errorButtonGradient}
             >
-              <Text style={styles.errorButtonText}>Create a Story</Text>
+              <Text style={styles.errorButtonText}>✨ Create a Story</Text>
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity
@@ -921,8 +946,8 @@ export default function PlayerScreen() {
         {/* Branch generating indicator */}
         {isGeneratingBranch && (
           <View style={styles.branchLoadingSection}>
-            <ActivityIndicator color={Colors.celestialGold} />
-            <Text style={styles.branchLoadingText}>{"Writing your story's ending\u2026"}</Text>
+            <StardustLoader size={36} color={Colors.celestialGold} />
+            <Text style={styles.branchLoadingText}>{"Weaving your magical ending\u2026"}</Text>
           </View>
         )}
 
@@ -1211,11 +1236,36 @@ const styles = StyleSheet.create({
 
   // ── Loading / error states
   centeredState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl, gap: 16 },
-  loadingMoon:   { fontSize: 56 },
-  loadingText:   { fontFamily: Fonts.bold,      fontSize: 16, color: 'rgba(240,235,248,0.55)', textAlign: 'center' },
-  errorEmoji:    { fontSize: 56 },
-  errorTitle:    { fontFamily: Fonts.extraBold, fontSize: 22, color: '#FFFFFF', textAlign: 'center' },
-  errorText:     { fontFamily: Fonts.regular,   fontSize: 14, color: 'rgba(240,235,248,0.55)', textAlign: 'center', lineHeight: 20 },
+  loadingText:   { fontFamily: Fonts.bold, fontSize: 16, color: 'rgba(240,235,248,0.60)', textAlign: 'center', marginTop: 8,
+    textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  // Frosted glass error panel
+  errorGlassPanel: {
+    width: '100%',
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    padding: Spacing.xl,
+    alignItems: 'center',
+    gap: Spacing.sm,
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 30,
+    shadowOpacity: 0.35,
+    elevation: 12,
+  },
+  errorGlassPanelEdge: {
+    position: 'absolute', top: 0, left: '15%', right: '15%',
+    height: 1, backgroundColor: 'rgba(255,255,255,0.28)', borderRadius: 1,
+  },
+  errorEmoji:    { fontSize: 52 },
+  errorTitle:    {
+    fontFamily: Fonts.extraBold, fontSize: 21, color: '#FFFFFF', textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
+  },
+  errorText:     {
+    fontFamily: Fonts.regular, fontSize: 14, color: 'rgba(240,235,248,0.65)', textAlign: 'center', lineHeight: 21,
+  },
   errorButton:   {
     borderRadius: Radius.full, overflow: 'hidden', marginTop: 8,
     shadowColor: Colors.celestialGold, shadowOffset: { width: 0, height: 6 },
@@ -1270,8 +1320,14 @@ const styles = StyleSheet.create({
   },
   backIcon:    { fontSize: 28, color: '#FFFFFF', lineHeight: 32 },
   headerCenter: { alignItems: 'center', flex: 1, marginHorizontal: Spacing.sm },
-  headerLabel:  { fontFamily: Fonts.bold,      fontSize: 13, color: 'rgba(240,235,248,0.55)' },
-  headerChild:  { fontFamily: Fonts.extraBold, fontSize: 16, color: '#FFFFFF' },
+  headerLabel:  {
+    fontFamily: Fonts.bold, fontSize: 13, color: 'rgba(240,235,248,0.60)',
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  headerChild:  {
+    fontFamily: Fonts.extraBold, fontSize: 16, color: '#FFFFFF',
+    textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
+  },
 
   headerActions: {
     flexDirection:   'row',
@@ -1361,9 +1417,10 @@ const styles = StyleSheet.create({
     color:         '#FFFFFF',
     lineHeight:    32,
     letterSpacing: 0.3,
-    textShadowColor: 'rgba(255,255,255,0.15)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 8,
+    // Dark shadow underneath ensures legibility over the moving gradient
+    textShadowColor: 'rgba(0,0,0,0.60)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 10,
   },
   badgeRow: {
     flexDirection: 'row',

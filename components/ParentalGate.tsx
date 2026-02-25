@@ -226,7 +226,12 @@ export default function ParentalGate({
               ref={inputRef}
               style={[styles.input, error && styles.inputError]}
               value={input}
-              onChangeText={(t) => { setInput(t); setError(false); }}
+              onChangeText={(t) => {
+                // Gentle selection haptic on each digit typed
+                if (t.length > input.length) void Haptics.selectionAsync();
+                setInput(t);
+                setError(false);
+              }}
               placeholder="Your answer…"
               placeholderTextColor="rgba(153,153,187,0.55)"
               keyboardType="number-pad"
