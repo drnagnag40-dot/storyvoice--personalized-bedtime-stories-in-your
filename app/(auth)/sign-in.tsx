@@ -305,6 +305,24 @@ const socialStyles = StyleSheet.create({
 
 // ─── Error message helpers ────────────────────────────────────────────────────
 function getFriendlyErrorMessage(err: unknown): string {
+  // Handle plain AuthError objects from @fastshot/auth  { type, message }
+  if (err !== null && typeof err === 'object' && !Array.isArray(err)) {
+    const obj = err as Record<string, unknown>;
+    // NETWORK_ERROR type is a reliable signal
+    if (obj['type'] === 'NETWORK_ERROR') {
+      return 'Unable to connect. Please check your internet connection and try again.';
+    }
+    // Extract message string from the object
+    if (typeof obj['message'] === 'string') {
+      return getFriendlyErrorMessage(obj['message']);
+    }
+    // Try originalError as fallback
+    if (obj['originalError']) {
+      return getFriendlyErrorMessage(obj['originalError']);
+    }
+    return 'Something went wrong. Please try again.';
+  }
+
   const raw = err instanceof Error ? err.message : String(err ?? '');
 
   if (!raw) return 'Something went wrong. Please try again.';
