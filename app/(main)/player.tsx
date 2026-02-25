@@ -57,6 +57,7 @@ import { generateText } from '@fastshot/ai';
 import { addStardust, incrementStoriesCompleted } from '@/lib/stardust';
 import { trackStoryEvent, trackSession } from '@/lib/analytics';
 import { cacheStory } from '@/lib/offlineCache';
+import StardustEarnedAnimation from '@/components/StardustEarnedAnimation';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -186,6 +187,11 @@ export default function PlayerScreen() {
   // Reflection answers for journal (populated when parent types answers in future phase)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [reflectionAnswers, setReflectionAnswers] = useState<string[]>([]);
+
+  // Stardust earned animation
+  const [showStardustAnim, setShowStardustAnim] = useState(false);
+  const [stardustEarned, setStardustEarned]     = useState(0);
+  const [stardustReason, setStardustReason]     = useState('');
 
   // ── Refs for resources that MUST be cleaned up ────────────────────────────
   // Storing intervals/timeouts in refs ensures they survive re-renders and can
@@ -431,6 +437,10 @@ export default function PlayerScreen() {
       // Award stardust for interactive adventure completion
       await addStardust(15, 'Completed Interactive Adventure! 🌟', '🎯');
       await incrementStoriesCompleted();
+      // Trigger stardust animation
+      setStardustEarned(15);
+      setStardustReason('Interactive Adventure completed! 🎯');
+      setShowStardustAnim(true);
 
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
@@ -539,6 +549,10 @@ export default function PlayerScreen() {
         if (!story.isInteractive) {
           await addStardust(10, `Completed "${story.title}"`, '📖');
           await incrementStoriesCompleted();
+          // Trigger stardust animation
+          setStardustEarned(10);
+          setStardustReason(`Completed "${story.title}" 📖`);
+          setShowStardustAnim(true);
           // Track completion for analytics
           void trackStoryEvent({
             story_id:    story.id ?? `story_${Date.now()}`,
@@ -1154,6 +1168,14 @@ export default function PlayerScreen() {
       <AmbientMixer
         visible={showAmbientMixer}
         onClose={() => setShowAmbientMixer(false)}
+      />
+
+      {/* ── Stardust Earned Animation ──────────────────────────────────────── */}
+      <StardustEarnedAnimation
+        visible={showStardustAnim}
+        amount={stardustEarned}
+        reason={stardustReason}
+        onDone={() => setShowStardustAnim(false)}
       />
 
       {/* ── Sleep Timer Modal ──────────────────────────────────────────────── */}

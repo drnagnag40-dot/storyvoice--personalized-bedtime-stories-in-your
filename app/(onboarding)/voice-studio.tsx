@@ -5,9 +5,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@fastshot/auth';
@@ -21,6 +23,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import StarField from '@/components/StarField';
+import BreathingGradient from '@/components/BreathingGradient';
 import AudioWaveform from '@/components/AudioWaveform';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import { buildVoiceScript } from '@/lib/newell';
@@ -67,6 +70,17 @@ function VoiceProgressTracker({
 
   return (
     <View style={styles.progressTracker}>
+      {/* Glass container */}
+      {Platform.OS !== 'web' && (
+        <BlurView intensity={18} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]} />
+      )}
+      <LinearGradient
+        colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)']}
+        style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+      />
+      {/* Top shine */}
+      <View style={styles.progressShineEdge} />
+
       {/* Segment row */}
       <View style={styles.progressSegments}>
         {Array.from({ length: total }, (_, i) => {
@@ -370,11 +384,7 @@ export default function VoiceStudioScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[Colors.deepSpace, Colors.midnightNavy, '#1D1550']}
-        locations={[0, 0.6, 1]}
-        style={StyleSheet.absoluteFill}
-      />
+      <BreathingGradient />
       <StarField count={35} />
 
       <View style={[styles.content, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 }]}>
@@ -402,10 +412,19 @@ export default function VoiceStudioScreen() {
 
         {/* Script card */}
         <Animated.View style={[styles.scriptCard, cardAnimStyle]}>
+          {Platform.OS !== 'web' && (
+            <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+          )}
           <LinearGradient
-            colors={['rgba(74,56,128,0.6)', 'rgba(37,38,85,0.8)']}
+            colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.03)']}
             style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
           />
+          <LinearGradient
+            colors={['rgba(74,56,128,0.50)', 'rgba(37,38,85,0.65)']}
+            style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+          />
+          {/* Shine edge */}
+          <View style={styles.scriptCardShineEdge} />
           <View style={styles.scriptCardHeader}>
             <View style={[styles.paragraphBadge, isDoneWithCurrent && styles.paragraphBadgeDone]}>
               <Text style={styles.paragraphBadgeText}>
@@ -437,8 +456,18 @@ export default function VoiceStudioScreen() {
           </View>
         </Animated.View>
 
-        {/* Waveform */}
+        {/* Waveform — glass container */}
         <View style={styles.waveformSection}>
+          {Platform.OS !== 'web' && (
+            <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]} />
+          )}
+          <LinearGradient
+            colors={isRecording
+              ? ['rgba(255,215,0,0.08)', 'rgba(255,215,0,0.02)']
+              : ['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.01)']}
+            style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+          />
+          <View style={[styles.waveformShineEdge, isRecording && styles.waveformShineEdgeActive]} />
           <AudioWaveform isRecording={isRecording} color={isRecording ? Colors.celestialGold : Colors.borderColor} />
           {isRecording && (
             <View style={styles.recordingIndicator}>
@@ -486,6 +515,18 @@ export default function VoiceStudioScreen() {
         {/* Tip */}
         {!isRecording && (
           <View style={styles.tipBanner}>
+            {Platform.OS !== 'web' && (
+              <BlurView intensity={22} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]} />
+            )}
+            <LinearGradient
+              colors={['rgba(255,255,255,0.07)', 'rgba(255,255,255,0.02)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+            />
+            <LinearGradient
+              colors={['rgba(107,72,184,0.18)', 'rgba(107,72,184,0.04)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+            />
+            <View style={styles.tipBannerShine} />
             <Text style={styles.tipEmoji}>💡</Text>
             <Text style={styles.tipText}>
               {hasPermission === false
@@ -502,18 +543,29 @@ export default function VoiceStudioScreen() {
           style={[
             styles.finishButton,
             completedParagraphs.size === 0 && styles.finishButtonDisabled,
-            allRecorded && styles.finishButtonReady,
           ]}
           onPress={handleFinish}
           disabled={isSaving || completedParagraphs.size === 0}
         >
-          <Text style={[styles.finishButtonText, allRecorded && styles.finishButtonTextReady]}>
-            {isSaving
-              ? 'Saving…'
-              : allRecorded
-              ? '✨ Finish & Generate Stories!'
-              : `Save Progress (${completedParagraphs.size}/${TOTAL_PARAGRAPHS} done)`}
-          </Text>
+          {allRecorded ? (
+            <LinearGradient
+              colors={[Colors.celestialGold, Colors.softGold, '#FFA500']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={styles.finishButtonGradient}
+            >
+              <Text style={styles.finishButtonTextReady}>
+                {isSaving ? '✓ Saving…' : '✨ Finish & Generate Stories!'}
+              </Text>
+            </LinearGradient>
+          ) : (
+            <View style={styles.finishButtonInner}>
+              <Text style={styles.finishButtonText}>
+                {isSaving
+                  ? 'Saving…'
+                  : `Save Progress (${completedParagraphs.size}/${TOTAL_PARAGRAPHS} done)`}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -527,12 +579,19 @@ const styles = StyleSheet.create({
   backButton: { paddingVertical: 8 },
   backText: { fontFamily: Fonts.medium, fontSize: 15, color: Colors.textMuted },
   stepBadge: {
-    backgroundColor: 'rgba(107,72,184,0.3)',
+    backgroundColor: 'rgba(107,72,184,0.22)',
     borderRadius: Radius.full,
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: Colors.softPurple,
+    borderColor: 'rgba(107,72,184,0.55)',
+    // Glass float
+    shadowColor: '#6B48B8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    shadowOpacity: 0.35,
+    elevation: 5,
+    overflow: 'hidden',
   },
   stepText: { fontFamily: Fonts.bold, fontSize: 12, color: Colors.celestialGold },
   title: { fontFamily: Fonts.extraBold, fontSize: 26, color: Colors.moonlightCream, marginBottom: 4 },
@@ -541,6 +600,26 @@ const styles = StyleSheet.create({
   progressTracker: {
     marginBottom: Spacing.md,
     gap: Spacing.sm,
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: Spacing.md,
+    // Glass float
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 18,
+    shadowOpacity: 0.28,
+    elevation: 8,
+  },
+  progressShineEdge: {
+    position: 'absolute',
+    top: 0,
+    left: '20%',
+    right: '20%',
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.30)',
+    borderRadius: 1,
   },
   progressSegments: {
     flexDirection: 'row',
@@ -622,14 +701,28 @@ const styles = StyleSheet.create({
     color: Colors.celestialGold,
   },
   scriptCard: {
-    backgroundColor: Colors.cardBg,
     borderRadius: Radius.xl,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.18)',
     overflow: 'hidden',
     minHeight: 160,
+    // Glass float shadow
+    shadowColor: '#9B6FDE',
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 28,
+    shadowOpacity: 0.35,
+    elevation: 12,
+  },
+  scriptCardShineEdge: {
+    position: 'absolute',
+    top: 0,
+    left: '10%',
+    right: '10%',
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.32)',
+    borderRadius: 1,
   },
   scriptCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   paragraphBadge: {
@@ -663,22 +756,69 @@ const styles = StyleSheet.create({
   },
   navButtonDisabled: { opacity: 0.3 },
   navButtonText: { fontFamily: Fonts.bold, fontSize: 22, color: Colors.textLight, lineHeight: 26 },
-  waveformSection: { alignItems: 'center', marginBottom: Spacing.sm },
+  waveformSection: {
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    // Glass float
+    shadowColor: Colors.celestialGold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    shadowOpacity: 0.15,
+    elevation: 6,
+  },
+  waveformShineEdge: {
+    position: 'absolute',
+    top: 0,
+    left: '25%',
+    right: '25%',
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.20)',
+    borderRadius: 1,
+  },
+  waveformShineEdgeActive: {
+    backgroundColor: 'rgba(255,215,0,0.45)',
+    left: '20%',
+    right: '20%',
+  },
   recordingIndicator: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.errorRed },
   recordingTimer: { fontFamily: Fonts.extraBold, fontSize: 20, color: Colors.moonlightCream },
   recordSection: { alignItems: 'center', marginBottom: Spacing.md },
   pulseRing: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 3,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 2.5,
     borderColor: Colors.celestialGold,
-    top: -10,
+    top: -15,
+    // Gold glow
+    shadowColor: Colors.celestialGold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 20,
+    shadowOpacity: 0.80,
+    elevation: 10,
   },
-  recordButton: { borderRadius: 40, overflow: 'hidden' },
-  recordButtonActive: {},
+  recordButton: {
+    borderRadius: 50,
+    overflow: 'hidden',
+    // Glass float
+    shadowColor: Colors.softPurple,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 22,
+    shadowOpacity: 0.55,
+    elevation: 14,
+  },
+  recordButtonActive: {
+    shadowColor: Colors.errorRed,
+    shadowOpacity: 0.70,
+  },
   recordButtonGradient: {
     width: 100,
     height: 100,
@@ -686,6 +826,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
   recordButtonIcon: { fontSize: 28 },
   recordButtonText: { fontFamily: Fonts.bold, fontSize: 13, color: '#fff' },
@@ -702,29 +844,57 @@ const styles = StyleSheet.create({
   tipBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: 'rgba(37,38,85,0.8)',
     borderRadius: Radius.lg,
     padding: Spacing.md,
     gap: 10,
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.borderColor,
+    borderColor: 'rgba(255,255,255,0.14)',
+    overflow: 'hidden',
+    // Float shadow
+    shadowColor: '#6B48B8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 14,
+    shadowOpacity: 0.25,
+    elevation: 6,
+  },
+  tipBannerShine: {
+    position: 'absolute',
+    top: 0,
+    left: '20%',
+    right: '20%',
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 1,
   },
   tipEmoji: { fontSize: 18, marginTop: 1 },
   tipText: { fontFamily: Fonts.regular, fontSize: 13, color: Colors.textMuted, flex: 1, lineHeight: 18 },
   finishButton: {
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: Colors.borderColor,
-    paddingVertical: 15,
-    alignItems: 'center',
-    backgroundColor: Colors.cardBg,
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    // Float shadow
+    shadowColor: Colors.celestialGold,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 20,
+    shadowOpacity: 0.35,
+    elevation: 10,
   },
   finishButtonDisabled: { opacity: 0.4 },
-  finishButtonReady: {
-    backgroundColor: 'rgba(255,215,0,0.1)',
-    borderColor: Colors.celestialGold,
+  finishButtonGradient: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  finishButtonInner: {
+    borderRadius: Radius.xl,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.14)',
+    paddingVertical: 15,
+    alignItems: 'center',
+    backgroundColor: 'rgba(61,63,122,0.5)',
   },
   finishButtonText: { fontFamily: Fonts.bold, fontSize: 15, color: Colors.textMuted },
-  finishButtonTextReady: { color: Colors.celestialGold },
+  finishButtonTextReady: { fontFamily: Fonts.black, fontSize: 15, color: Colors.deepSpace },
 });

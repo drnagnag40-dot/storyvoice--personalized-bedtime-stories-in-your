@@ -40,6 +40,7 @@ import MagicSyncModal, { type MagicSyncState } from '@/components/MagicSyncModal
 import NarratorGallery from '@/components/NarratorGallery';
 import CollectionModal from '@/components/CollectionModal';
 import StarsPaywall from '@/components/StarsPaywall';
+import ReadyForMagicScreen from '@/components/ReadyForMagicScreen';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import {
   toggleStoryFavorite,
@@ -446,12 +447,28 @@ export default function HomeScreen() {
   const [migrationResult,     setMigrationResult]     = useState<MigrationResult | null>(null);
   const migrationCheckedRef = useRef(false);
 
+  // ── Ready for Magic (Supabase setup) banner
+  const [showReadyForMagic, setShowReadyForMagic] = useState(false);
+
   // ── Welcome Home Greeting state
   const [showGreeting,      setShowGreeting]      = useState(false);
   const [greetingText,      setGreetingText]      = useState('');
   const [greetingNarrator,  setGreetingNarrator]  = useState(NARRATOR_PERSONALITIES[0]);
   const greetingOpacity = useSharedValue(0);
   const greetingScale   = useSharedValue(0.9);
+
+  // Show Ready for Magic screen once per session when Supabase is not configured
+  useEffect(() => {
+    if (!isSupabaseAvailable) {
+      const key = 'ready_for_magic_dismissed';
+      void AsyncStorage.getItem(key).then((val) => {
+        if (!val) {
+          // Show after a brief delay so the home screen loads first
+          setTimeout(() => setShowReadyForMagic(true), 1200);
+        }
+      });
+    }
+  }, []);
 
   const requireParentalGate = useCallback((context: string, action: () => void) => {
     pendingActionRef.current = action;
@@ -1287,6 +1304,20 @@ export default function HomeScreen() {
           </Animated.View>
         </TouchableOpacity>
       </Modal>
+
+      {/* ── Ready for Magic (Supabase not configured) ───────────────────────── */}
+      <ReadyForMagicScreen
+        visible={showReadyForMagic}
+        onDismiss={async () => {
+          setShowReadyForMagic(false);
+          // Remember dismissal so it only appears once per session
+          try {
+            await AsyncStorage.setItem('ready_for_magic_dismissed', '1');
+          } catch {
+            // non-fatal
+          }
+        }}
+      />
     </View>
   );
 }
