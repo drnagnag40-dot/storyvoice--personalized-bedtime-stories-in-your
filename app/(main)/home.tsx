@@ -57,6 +57,9 @@ import {
 } from '@/lib/migrationService';
 import { NARRATOR_PERSONALITIES, buildWelcomeGreetingPrompt } from '@/lib/newell';
 import { generateText } from '@fastshot/ai';
+import { getStardustBalance } from '@/lib/stardust';
+import { getBedtimeStreak } from '@/lib/streak';
+import { getCached, setCached, greetingCacheKey } from '@/lib/magicCache';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android') {
@@ -457,6 +460,15 @@ export default function HomeScreen() {
   const greetingOpacity = useSharedValue(0);
   const greetingScale   = useSharedValue(0.9);
 
+  // ── Stardust Total & Bedtime Streak ─────────────────────────────────────────
+  const [stardustBalance, setStardustBalance] = useState(0);
+  const [bedtimeStreak,   setBedtimeStreak]   = useState(0);
+
+  // Pulsing ember for streak pill
+  const emberPulse = useSharedValue(1);
+  // Shimmer sweep for stardust star
+  const starShimmer = useSharedValue(0);
+
   // Show Ready for Magic screen once per session when Supabase is not configured
   useEffect(() => {
     if (!isSupabaseAvailable) {
@@ -589,6 +601,35 @@ export default function HomeScreen() {
     headerScale.value    = withTiming(1, { duration: 700, easing: Easing.out(Easing.back(1.05)) });
     contentOpacity.value = withDelay(280, withTiming(1, { duration: 700, easing: Easing.out(Easing.quad) }));
     contentScale.value   = withDelay(280, withTiming(1, { duration: 800, easing: Easing.out(Easing.back(1.05)) }));
+
+    // Load stardust balance and streak
+    void getStardustBalance().then(setStardustBalance);
+    void getBedtimeStreak().then(setBedtimeStreak);
+
+    // Ember pulse animation — warm 3s breathing cycle
+    emberPulse.value = withRepeat(
+      withSequence(
+        withTiming(1.35, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1,    { duration: 1500, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+      false,
+    );
+
+    // Stardust star shimmer sweep — 4s cycle
+    starShimmer.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1200, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 2800, easing: Easing.in(Easing.quad) }),
+      ),
+      -1,
+      false,
+    );
+
+    return () => {
+      cancelAnimation(emberPulse);
+      cancelAnimation(starShimmer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadData]);
 
@@ -635,12 +676,17 @@ export default function HomeScreen() {
         hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
 
       try {
-        const prompt = buildWelcomeGreetingPrompt(narrator, childName, timeOfDay);
-        const greeting = await generateText({ prompt });
-        if (greeting?.trim()) {
-          setGreetingText(greeting.trim());
+        // Check Magic Cache before calling AI
+        const cacheKey = greetingCacheKey(narrator.id, childName, timeOfDay);
+        const cached   = await getCached(cacheKey);
+        if (cached) {
+          setGreetingText(cached);
         } else {
-          setGreetingText(`Welcome back! ${childName} will love tonight's bedtime story. Shall we create one together?`);
+          const prompt  = buildWelcomeGreetingPrompt(narrator, childName, timeOfDay);
+          const greeting = await generateText({ prompt });
+          const text = greeting?.trim() || `Welcome back! ${childName} will love tonight's bedtime story. Shall we create one together?`;
+          setGreetingText(text);
+          await setCached(cacheKey, text);
         }
       } catch {
         setGreetingText(`Welcome back! Time for a magical bedtime story. ${narrator.previewText}`);
@@ -790,6 +836,17 @@ export default function HomeScreen() {
     transform: [{ scale: greetingScale.value }],
   }));
 
+  // Streak ember pulsing scale
+  const emberStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: emberPulse.value }],
+  }));
+
+  // Stardust star shimmer glow
+  const starGlowStyle = useAnimatedStyle(() => ({
+    textShadowRadius:  interpolate(starShimmer.value, [0, 1], [4, 18], Extrapolation.CLAMP),
+    opacity:           interpolate(starShimmer.value, [0, 1], [0.85, 1], Extrapolation.CLAMP),
+  }));
+
   // ── Story section renderer ─────────────────────────────────────────────────────
   const renderStoryList = (data: Story[], emptyMsg?: string) => {
     if (data.length === 0 && !emptyMsg) return null;
@@ -844,6 +901,23 @@ export default function HomeScreen() {
             </Text>
           </View>
           <View style={styles.headerRight}>
+            {/* ── Stardust Total Counter ── */}
+            <TouchableOpacity
+              style={styles.stardustCounterPill}
+              onPress={() => router.push('/(main)/stardust-shop')}
+              activeOpacity={0.8}
+            >
+              {Platform.OS !== 'web' && (
+                <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              )}
+              <LinearGradient
+                colors={['rgba(255,215,0,0.18)', 'rgba(255,215,0,0.06)']}
+                style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+              />
+              <Animated.Text style={[styles.stardustCounterStar, starGlowStyle]}>⭐</Animated.Text>
+              <Text style={styles.stardustCounterValue}>{stardustBalance}</Text>
+            </TouchableOpacity>
+
             {/* Pro / Unlock button */}
             <TouchableOpacity
               style={styles.proButton}
@@ -1107,6 +1181,30 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
       </Animated.ScrollView>
+
+      {/* ── Bedtime Streak Floating Pill ─────────────────────────────────────── */}
+      {bedtimeStreak > 0 && (
+        <Animated.View
+          style={[styles.streakPill, { bottom: insets.bottom + 20 }]}
+          pointerEvents="none"
+        >
+          {Platform.OS !== 'web' && (
+            <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+          )}
+          <LinearGradient
+            colors={['rgba(255,165,0,0.22)', 'rgba(255,100,0,0.10)']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+          />
+          {/* Top specular edge */}
+          <View style={styles.streakPillEdge} />
+          <Animated.Text style={[styles.streakEmber, emberStyle]}>🔥</Animated.Text>
+          <View>
+            <Text style={styles.streakCount}>{bedtimeStreak}</Text>
+            <Text style={styles.streakLabel}>Night Streak</Text>
+          </View>
+        </Animated.View>
+      )}
 
       {/* ── Parental Gate ─────────────────────────────────────────────────────── */}
       <ParentalGate
@@ -1835,5 +1933,91 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.medium,
     fontSize:   13,
     color:      'rgba(240,235,248,0.45)',
+  },
+
+  // ── Stardust Counter Pill (header)
+  stardustCounterPill: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               5,
+    paddingHorizontal: 10,
+    paddingVertical:   7,
+    borderRadius:      Radius.full,
+    borderWidth:       1,
+    borderColor:       'rgba(255,215,0,0.35)',
+    overflow:          'hidden',
+    // Soft gold float
+    shadowColor:       Colors.celestialGold,
+    shadowOffset:      { width: 0, height: 0 },
+    shadowRadius:      10,
+    shadowOpacity:     0.30,
+    elevation:         4,
+  },
+  stardustCounterStar: {
+    fontSize:         16,
+    textShadowColor:  'rgba(255,215,0,0.90)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
+  },
+  stardustCounterValue: {
+    fontFamily:      Fonts.extraBold,
+    fontSize:        14,
+    color:           Colors.celestialGold,
+    letterSpacing:   0.2,
+    textShadowColor: 'rgba(255,215,0,0.50)',
+    textShadowOffset:{ width: 0, height: 0 },
+    textShadowRadius:6,
+  },
+
+  // ── Bedtime Streak Floating Pill
+  streakPill: {
+    position:          'absolute',
+    right:             Spacing.lg,
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               8,
+    paddingHorizontal: 14,
+    paddingVertical:   10,
+    borderRadius:      Radius.full,
+    borderWidth:       1,
+    borderColor:       'rgba(255,160,0,0.38)',
+    overflow:          'hidden',
+    // Warm amber float shadow
+    shadowColor:       '#FF8C00',
+    shadowOffset:      { width: 0, height: 6 },
+    shadowRadius:      20,
+    shadowOpacity:     0.45,
+    elevation:         14,
+  },
+  streakPillEdge: {
+    position:        'absolute',
+    top:             0,
+    left:            '20%',
+    right:           '20%',
+    height:          1,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    borderRadius:    1,
+  },
+  streakEmber: {
+    fontSize:         22,
+    textShadowColor:  'rgba(255,100,0,0.90)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  streakCount: {
+    fontFamily:      Fonts.black,
+    fontSize:        18,
+    color:           '#FFB347',
+    lineHeight:      20,
+    textShadowColor: 'rgba(255,130,0,0.70)',
+    textShadowOffset:{ width: 0, height: 0 },
+    textShadowRadius:8,
+  },
+  streakLabel: {
+    fontFamily: Fonts.medium,
+    fontSize:   10,
+    color:      'rgba(255,200,120,0.75)',
+    lineHeight: 13,
+    letterSpacing: 0.3,
   },
 });

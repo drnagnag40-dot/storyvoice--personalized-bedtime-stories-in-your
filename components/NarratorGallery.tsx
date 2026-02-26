@@ -34,6 +34,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateText } from '@fastshot/ai';
+import { getCached, setCached, previewCacheKey } from '@/lib/magicCache';
 import { Colors, Fonts, Spacing, Radius } from '@/constants/theme';
 import {
   NARRATOR_PERSONALITIES,
@@ -241,9 +242,18 @@ function PreviewModal({
     setIsLoading(true);
     setError(null);
     try {
-      const prompt = buildNarratorPreviewPrompt(narrator, childName);
-      const result = await generateText({ prompt, temperature: 0.7 });
-      setPreviewText(result?.trim() ?? narrator.previewText);
+      // Check Magic Cache before calling AI
+      const cKey   = previewCacheKey(narrator.id, childName);
+      const cached = await getCached(cKey);
+      if (cached) {
+        setPreviewText(cached);
+      } else {
+        const prompt = buildNarratorPreviewPrompt(narrator, childName);
+        const result = await generateText({ prompt, temperature: 0.7 });
+        const text   = result?.trim() ?? narrator.previewText;
+        setPreviewText(text);
+        if (result?.trim()) await setCached(cKey, text);
+      }
     } catch {
       setPreviewText(narrator.previewText);
     } finally {

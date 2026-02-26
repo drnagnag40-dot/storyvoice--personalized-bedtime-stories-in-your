@@ -110,58 +110,34 @@ export const NARRATOR_PERSONALITIES: NarratorPersonality[] = [
 function buildNarratorStyleGuide(style: NarratorStyle): string {
   switch (style) {
     case 'whisper':
-      return `
-NARRATOR STYLE — LUNA THE OWL (wise · gentle · soothing):
-- Luna is ancient and wise — she has watched over sleeping children for a thousand moonrises.
-- Every sentence is a soft gift: short, breathy, never more than 10 words.
-- Favour hushed consonants: s, sh, l, m, n. Avoid hard k, t, p sounds.
-- Use ellipses (...) as gentle breathing pauses between thoughts.
-- Weave in small, tender wisdom — one quiet truth per paragraph, like a feather landing.
-- Sensory words: drift, hush, shimmer, veil, moonpool, feather-light, silver, still, melt.
-- Tone: intimate and celestial, as if the night sky itself is whispering a lullaby.`.trim();
+      return `STYLE — LUNA (hushed · celestial · soothing):
+Short breathy sentences (≤10 words). Ellipses (...) as breathing pauses.
+Hushed sounds: s, sh, l, m. Words: drift, hush, shimmer, silver, still, moonpool.
+One quiet wisdom per paragraph. Intimate, as if the night sky whispers.`.trim();
 
     case 'wise':
-      return `
-NARRATOR STYLE — BARNABY THE BEAR (warm · playful · forest-themed):
-- Barnaby is a great old bear who lives in a mossy forest and knows its every secret.
-- He speaks with earthy warmth — slow and unhurried, like honey dripping from a comb.
-- Each paragraph carries one gentle forest-wisdom: lessons from the oak, the stream, the seasons.
-- Use playful, affectionate touches — a rumbling chuckle, a fond nickname, a cosy bear metaphor.
-- Rich forest imagery: honeycomb, pine needles, mossy logs, autumn leaves, a crackling hearth.
-- Words like: roots, warm, patient, sturdy, cosy, amble, honey-golden, wonder, safe, den.
-- Tone: like a beloved uncle bear tucking you in — deep, safe, and gently playful.`.trim();
+      return `STYLE — BARNABY (warm · earthy · forest):
+Slow, unhurried voice like honey dripping. One gentle forest-wisdom per paragraph.
+Imagery: honeycomb, pine needles, mossy logs, crackling hearth.
+Words: roots, cosy, patient, honey-golden, safe, den. Tone: beloved bear uncle.`.trim();
 
     case 'enthusiastic':
-      return `
-NARRATOR STYLE — ENTHUSIASTIC (Cosmo the Star):
-- Use exclamations and vivid, energetic language — BUT paragraphs 4 and 5 must calm down significantly!
-- Paragraphs 1–3: Use lots of energy, bright adjectives, and excitement.
-- Paragraphs 4–5: Slowly bring the energy down to a gentle, sleepy warmth. The enthusiasm fades into cozy.
-- Use ALL CAPS sparingly for key exciting words in early paragraphs.
-- Words like: amazing, wonderful, sparkling, incredible, magical, brilliant, glowing.
-- The tone should feel like a best friend who gets really excited, then tucks you in gently.`.trim();
+      return `STYLE — COSMO (bright · energetic → calming):
+Paragraphs 1–3: vivid exclamations, ALL CAPS sparingly, bright adjectives.
+Paragraphs 4–5: energy fades to gentle sleepy warmth.
+Words: amazing, sparkling, magical, brilliant. End cosy, not exciting.`.trim();
 
     case 'slow-paced':
-      return `
-NARRATOR STYLE — SLOW-PACED (Aria the Fairy):
-- Write with deeply rhythmic, repetitive phrasing that mirrors breathing.
-- Use commas and ellipses (...) frequently to create natural breathing pauses.
-- Repeat calming phrases like refrains: "And so... they rested. Yes... they rested."
-- Sentences should feel like they are moving in slow motion.
-- Use repetition of soothing sounds and words throughout each paragraph.
-- Words like: gentle, soft, slow, steady, breathing, resting, peaceful, drifting, floating.
-- The tone mimics a lullaby — predictable, repetitive, hypnotically calming.`.trim();
+      return `STYLE — ARIA (rhythmic · repetitive · lullaby):
+Commas and ellipses (...) create breathing pauses. Slow-motion phrasing.
+Repeat calming refrains: "And so… they rested. Yes… they rested."
+Words: gentle, soft, steady, drifting, peaceful. Hypnotically calm.`.trim();
 
     case 'dramatic':
-      return `
-NARRATOR STYLE — DRAMATIC (Rex the Dragon):
-- Use vivid, epic, cinematic language — but it MUST still be a soothing bedtime story.
-- Open with a grand, sweeping sentence that paints a world.
-- Paragraphs 1–3: Use bold imagery, strong verbs, and a sense of grand adventure.
-- Paragraphs 4–5: The epic world grows quiet and the hero rests. The drama becomes peaceful.
-- Use strong, resonant words. Avoid anything scary or threatening.
-- Words like: ancient, vast, legendary, golden, mighty, glorious, radiant, majestic.
-- The tone is like an epic myth whispered at bedtime — grand but safe and warm.`.trim();
+      return `STYLE — REX (epic · cinematic → peaceful):
+Paragraphs 1–3: grand sweeping imagery, bold verbs, cinematic scale.
+Paragraphs 4–5: epic world quiets, hero rests, drama becomes peaceful.
+Words: ancient, legendary, golden, mighty, majestic. Safe, never scary.`.trim();
 
     default:
       return '';
@@ -196,23 +172,15 @@ export function buildStoryPrompt(input: StoryGenerationInput): string {
 
   return `
 ${narratorIntro}
-Write a warm, deeply soothing 5-paragraph bedtime story for a ${ageText} child named ${child.name}.
-${interests}
-${lifeNotes}
-${theme ? `Story theme: ${theme}.` : ''}
-${mood ? `Story mood: ${mood}.` : 'The story should be progressively calming, with each paragraph gentler and quieter than the last.'}
+Soothing 5-paragraph bedtime story for ${ageText} ${child.name}.
+${interests}${lifeNotes}${theme ? `Theme: ${theme}.` : ''}${mood ? ` Mood: ${mood}.` : ''}
 
 STRUCTURE:
-- Paragraphs 1–3: A gentle adventure or exploration, written in soft, unhurried language. Each sentence should feel like a slow exhale.
-- Paragraph 4: The world around the characters grows very quiet and still. Sounds fade. The pace slows to almost nothing. Use short, rhythmic sentences that mirror a child's breathing slowing down.
-- Paragraph 5 (THE SLEEPY ENDING): This paragraph must be a gentle, rhythmic wind-down. Describe the main character's eyes growing heavy, their breathing slowing to a calm and steady rhythm. Use poetic, repetitive phrasing — soft pillows, warm blankets, the hush of night, fading starlight. The character should drift peacefully to sleep, carried away on a cloud of dreams, as the story whispers to a close. End with one final, tender sentence — very short, very quiet — like a lullaby's last note.
+- P1–3: Gentle adventure, soft unhurried language, each sentence a slow exhale.
+- P4: World grows quiet and still. Short rhythmic sentences — child's breathing slows.
+- P5 (SLEEPY ENDING): Eyes heavy, breathing calm. Poetic, repetitive wind-down — pillows, starlight, drifting to sleep. Final sentence: very short, very tender.
 
-RULES:
-- Exactly 5 paragraphs, each 2–4 sentences. Total story: 150–250 words maximum.
-- Use simple, dreamy language a child can easily follow.
-- No conflict, no peril, no exciting twists in paragraphs 4–5.
-- The overall rhythm should slow progressively like a song fading out.
-- Be concise. Every word must earn its place.
+RULES: 5 paragraphs, 2–4 sentences each. 150–250 words. Simple dreamy language. No peril in P4–5. Rhythm slows like a song fading.
 
 ${narratorGuide}
 `.trim();
@@ -225,9 +193,9 @@ export function buildNarratorPreviewPrompt(personality: NarratorPersonality, chi
   const name = childName ?? 'little dreamer';
   return `
 You are ${personality.name} ${personality.species}.
-Write ONE short paragraph (2–3 sentences, 35–50 words) greeting ${name} in your unique voice.
 ${buildNarratorStyleGuide(personality.style)}
-Output ONLY the paragraph — no title, no quotation marks, no extra text.
+Write ONE paragraph (2–3 sentences, 35–50 words) greeting ${name} in your unique voice.
+Output ONLY the paragraph — no title, no quotes, no extra text.
 `.trim();
 }
 
@@ -334,18 +302,18 @@ export function buildWelcomeGreetingPrompt(
   const greeting = timeOfDay === 'morning' ? 'Good morning' :
     timeOfDay === 'afternoon' ? 'Good afternoon' :
     timeOfDay === 'evening' ? 'Good evening' : 'Good night';
+  const styleHint: Record<NarratorStyle, string> = {
+    whisper:       'hushed, celestial, breathy with ellipses',
+    wise:          'warm, earthy, gentle forest wisdom',
+    enthusiastic:  'bright and joyful but softly welcoming',
+    'slow-paced':  'slow rhythmic, calming, with gentle pauses',
+    dramatic:      'epic but tender, warm and safe',
+  };
   return `
-You are ${narratorPersonality.name} ${narratorPersonality.species}, the beloved StoryVoice narrator.
-Write a warm, personal welcome greeting for ${childName} who has just opened the app.
-Style: ${narratorPersonality.style}
-Time of day: ${timeOfDay} (${greeting})
-
-RULES:
-- Exactly 2 sentences. Max 40 words total.
-- Personal and magical — narrator genuinely missed ${childName}.
-- Second sentence: gentle invitation to start a story.
-- No title, no formatting — greeting text only.
-${buildNarratorStyleGuide(narratorPersonality.style)}
+You are ${narratorPersonality.name} ${narratorPersonality.species} (${styleHint[narratorPersonality.style]}).
+${greeting}, ${childName} has just opened their bedtime story app.
+Write exactly 2 sentences (≤40 words): first warmly greet them as if you missed them; second invite them to start a story tonight.
+No title, no formatting — plain greeting text only.
 `.trim();
 }
 
@@ -398,33 +366,23 @@ export function buildInteractiveStoryPrompt(
     : '';
 
   return `
-${narratorIntro}
-${langNote}
-Write the FIRST PART of an interactive bedtime adventure for a ${ageText} child named ${child.name}.
-${interests}
-${lifeNotes}
-${theme ? `Story theme: ${theme}.` : ''}
+${narratorIntro}${langNote ? `\n${langNote}` : ''}
+Interactive bedtime adventure, first part, for ${ageText} ${child.name}.
+${interests}${lifeNotes}${theme ? `Theme: ${theme}.` : ''}
 
-STRUCTURE:
-- Write exactly 3 paragraphs. Each paragraph 2-3 sentences.
-- The story introduces the setting and main character.
-- Paragraph 3 ends at an exciting moment where the character must make a choice.
-- After paragraph 3, write exactly this format on a new line:
+3 paragraphs (2–3 sentences each, 100–140 words total). P3 ends at a magical choice moment.
+After P3, append:
 
 [CHOICE_POINT]
-PATH_A_EMOJI: [single emoji]
-PATH_A_LABEL: [short choice label, 4-6 words]
-PATH_A_HINT: [one sentence describing this path]
-PATH_B_EMOJI: [single emoji]
-PATH_B_LABEL: [short choice label, 4-6 words]
-PATH_B_HINT: [one sentence describing this path]
+PATH_A_EMOJI: [emoji]
+PATH_A_LABEL: [4–6 word label]
+PATH_A_HINT: [one calming sentence]
+PATH_B_EMOJI: [emoji]
+PATH_B_LABEL: [4–6 word label]
+PATH_B_HINT: [one calming sentence]
 [/CHOICE_POINT]
 
-RULES:
-- Exactly 3 paragraphs before the choice point. Total story text: 100–140 words.
-- Both choices: safe, calming, lead to good outcome.
-- Simple, dreamy language. Be concise — every word counts.
-- The choice should feel magical and empowering.
+Both paths: safe, calming, good outcome. Simple dreamy language.
 ${narratorGuide}
 `.trim();
 }
@@ -498,18 +456,10 @@ export function buildTranslationPrompt(
     : '';
 
   return `
-Translate the following children's bedtime story into ${LANGUAGE_NAMES[targetLanguage]}.
+Translate this children's bedtime story into ${LANGUAGE_NAMES[targetLanguage]}.
 ${narratorNote}
+Rules: warm soothing tone, preserve paragraph breaks, child-appropriate vocabulary, leave [CHOICE_POINT] markers unchanged. Return ONLY the translation.
 
-RULES:
-- Maintain the warm, gentle, soothing tone appropriate for a bedtime story.
-- Preserve all paragraph breaks (blank lines between paragraphs).
-- Keep the magical, dreamy quality of the language.
-- Use child-appropriate vocabulary in ${LANGUAGE_NAMES[targetLanguage]}.
-- Do NOT translate any [CHOICE_POINT] markers — leave them exactly as-is.
-- Return ONLY the translated text, no explanations.
-
-TEXT TO TRANSLATE:
 ${content}
 `.trim();
 }

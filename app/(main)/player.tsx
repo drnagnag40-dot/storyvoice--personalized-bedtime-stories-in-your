@@ -55,6 +55,7 @@ import { toggleStoryFavorite, isSupabaseAvailable } from '@/lib/supabase';
 import { NARRATOR_PERSONALITIES, buildReflectionQuestionsPrompt, buildStoryBranchPrompt, type NarratorPersonality } from '@/lib/newell';
 import { generateText } from '@fastshot/ai';
 import { addStardust, incrementStoriesCompleted } from '@/lib/stardust';
+import { updateBedtimeStreak } from '@/lib/streak';
 import { trackStoryEvent, trackSession } from '@/lib/analytics';
 import { cacheStory } from '@/lib/offlineCache';
 import StardustEarnedAnimation from '@/components/StardustEarnedAnimation';
@@ -192,6 +193,11 @@ export default function PlayerScreen() {
   const [showStardustAnim, setShowStardustAnim] = useState(false);
   const [stardustEarned, setStardustEarned]     = useState(0);
   const [stardustReason, setStardustReason]     = useState('');
+
+  // Post-story "Reflect on Tonight's Journey" CTA
+  const [showJournalCTA, setShowJournalCTA] = useState(false);
+  const journalCtaOpacity = useSharedValue(0);
+  const journalCtaY       = useSharedValue(20);
 
   // ── Refs for resources that MUST be cleaned up ────────────────────────────
   // Storing intervals/timeouts in refs ensures they survive re-renders and can
@@ -549,6 +555,7 @@ export default function PlayerScreen() {
         if (!story.isInteractive) {
           await addStardust(10, `Completed "${story.title}"`, '📖');
           await incrementStoriesCompleted();
+          await updateBedtimeStreak();
           // Trigger stardust animation
           setStardustEarned(10);
           setStardustReason(`Completed "${story.title}" 📖`);
@@ -697,6 +704,12 @@ export default function PlayerScreen() {
       shadowRadius,
     };
   });
+
+  // Journal CTA fade-in
+  const journalCtaStyle = useAnimatedStyle(() => ({
+    opacity:   journalCtaOpacity.value,
+    transform: [{ translateY: journalCtaY.value }],
+  }));
 
   // Choice card animated styles
   const choiceAStyle = useAnimatedStyle(() => ({
@@ -1071,6 +1084,49 @@ export default function PlayerScreen() {
         )}
       </ScrollView>
 
+      {/* ── 'Reflect on Tonight's Journey' CTA ─────────────────────────── */}
+      {showJournalCTA && (
+        <Animated.View
+          style={[
+            styles.journalCTAFloat,
+            { bottom: Math.max(insets.bottom, 12) + 90 },
+            journalCtaStyle,
+          ]}
+        >
+          <TouchableOpacity
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              router.push('/(main)/bedtime-journal');
+            }}
+            activeOpacity={0.85}
+          >
+            {Platform.OS !== 'web' && (
+              <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
+            )}
+            <LinearGradient
+              colors={['rgba(30,10,70,0.92)', 'rgba(14,8,32,0.96)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            {/* Gold shimmer tint */}
+            <LinearGradient
+              colors={['rgba(255,215,0,0.18)', 'rgba(107,72,184,0.12)']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            {/* Specular top edge */}
+            <View style={styles.journalCTAEdge} />
+            <View style={styles.journalCTAInner}>
+              <Text style={styles.journalCTAIcon}>📔</Text>
+              <View style={styles.journalCTATextGroup}>
+                <Text style={styles.journalCTATitle}>{"Reflect on Tonight\u2019s Journey"}</Text>
+                <Text style={styles.journalCTASubtitle}>Visit the Bedtime Journal →</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
       {/* ── Glow-Reflect border overlay (Quiet Time) ───────────────────── */}
       {quietTimeActive && (
         <Animated.View
@@ -1175,7 +1231,13 @@ export default function PlayerScreen() {
         visible={showStardustAnim}
         amount={stardustEarned}
         reason={stardustReason}
-        onDone={() => setShowStardustAnim(false)}
+        onDone={() => {
+          setShowStardustAnim(false);
+          // Reveal the Bedtime Journal CTA after animation completes
+          setShowJournalCTA(true);
+          journalCtaOpacity.value = withDelay(300, withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) }));
+          journalCtaY.value       = withDelay(300, withSpring(0,  { damping: 14, stiffness: 120 }));
+        }}
       />
 
       {/* ── Sleep Timer Modal ──────────────────────────────────────────────── */}
@@ -1909,5 +1971,60 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     alignItems: 'center',
     gap: Spacing.md,
+  },
+
+  // ── 'Reflect on Tonight's Journey' Floating CTA
+  journalCTAFloat: {
+    position:     'absolute',
+    left:         Spacing.lg,
+    right:        Spacing.lg,
+    borderRadius: Radius.xl,
+    borderWidth:  1.5,
+    borderColor:  'rgba(255,215,0,0.32)',
+    overflow:     'hidden',
+    // Deep gold float shadow
+    shadowColor:  Colors.celestialGold,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 32,
+    shadowOpacity: 0.50,
+    elevation:    18,
+  },
+  journalCTAEdge: {
+    position:        'absolute',
+    top:             0,
+    left:            '20%',
+    right:           '20%',
+    height:          1,
+    backgroundColor: 'rgba(255,255,255,0.38)',
+    borderRadius:    1,
+  },
+  journalCTAInner: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               Spacing.md,
+    paddingVertical:   Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+  },
+  journalCTAIcon: {
+    fontSize:         32,
+    textShadowColor:  'rgba(255,215,0,0.60)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 14,
+  },
+  journalCTATextGroup: { flex: 1 },
+  journalCTATitle: {
+    fontFamily:      Fonts.extraBold,
+    fontSize:        15,
+    color:           Colors.celestialGold,
+    letterSpacing:   0.3,
+    textShadowColor: 'rgba(255,215,0,0.40)',
+    textShadowOffset:{ width: 0, height: 0 },
+    textShadowRadius:8,
+  },
+  journalCTASubtitle: {
+    fontFamily: Fonts.medium,
+    fontSize:   12,
+    color:      'rgba(240,235,248,0.55)',
+    marginTop:  3,
   },
 });
