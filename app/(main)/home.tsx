@@ -10,6 +10,7 @@ import {
   UIManager,
   Modal,
   Dimensions,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -46,6 +47,7 @@ import {
   toggleStoryFavorite,
   upsertUserPreferences,
   isSupabaseAvailable,
+  getProfile,
 } from '@/lib/supabase';
 import type { Child, ParentVoice, Story } from '@/lib/supabase';
 import { loadHybridData } from '@/lib/syncService';
@@ -429,6 +431,7 @@ export default function HomeScreen() {
   const [activeVoiceId,  setActiveVoiceId]  = useState<string | null>(null);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [, setIsLoading]                   = useState(true);
+  const [guardianAvatarUrl, setGuardianAvatarUrl] = useState<string | null>(null);
   const [activeTab,      setActiveTab]      = useState<BookshelfTab>('all');
 
   // Phase 4: Collections & Paywall
@@ -541,6 +544,18 @@ export default function HomeScreen() {
     try {
       const savedVoiceId = await AsyncStorage.getItem('active_voice_id');
       if (savedVoiceId) setActiveVoiceId(savedVoiceId);
+
+      // Load guardian avatar from profile
+      if (user?.id && isSupabaseAvailable) {
+        try {
+          const profile = await getProfile(user.id);
+          if (profile?.avatar_url) {
+            setGuardianAvatarUrl(profile.avatar_url);
+          }
+        } catch {
+          // non-fatal
+        }
+      }
 
       const data = await loadHybridData(user?.id ?? null);
 
@@ -935,14 +950,37 @@ export default function HomeScreen() {
               />
               <Text style={styles.proButtonText}>👑 Pro</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.settingsButton}
-              onPress={() =>
-                requireParentalGate('Settings', () => router.push('/(main)/settings'))
-              }
-            >
-              <Text style={styles.settingsIcon}>⚙️</Text>
-            </TouchableOpacity>
+
+            {/* ── Dream Guardian Avatar or Settings ── */}
+            {guardianAvatarUrl ? (
+              <TouchableOpacity
+                style={styles.guardianAvatarBtn}
+                onPress={() =>
+                  requireParentalGate('Observatory', () => router.push('/(main)/observatory'))
+                }
+                activeOpacity={0.85}
+              >
+                {/* Glow halo */}
+                <View style={styles.guardianAvatarGlow} />
+                {/* Avatar image */}
+                <Image
+                  source={{ uri: guardianAvatarUrl }}
+                  style={styles.guardianAvatarImg}
+                  resizeMode="cover"
+                />
+                {/* Gold ring */}
+                <View style={styles.guardianAvatarRing} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.settingsButton}
+                onPress={() =>
+                  requireParentalGate('Settings', () => router.push('/(main)/settings'))
+                }
+              >
+                <Text style={styles.settingsIcon}>⚙️</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </Animated.View>
 
@@ -961,9 +999,20 @@ export default function HomeScreen() {
               <View style={styles.glassTopEdge} />
               <View style={styles.childCardHeader}>
                 <View style={styles.childAvatar}>
-                  <Text style={styles.childAvatarEmoji}>
-                    {child.name.charAt(0).toUpperCase()}
-                  </Text>
+                  {guardianAvatarUrl ? (
+                    <>
+                      <Image
+                        source={{ uri: guardianAvatarUrl }}
+                        style={styles.childAvatarImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.childAvatarGlowRing} />
+                    </>
+                  ) : (
+                    <Text style={styles.childAvatarEmoji}>
+                      {child.name.charAt(0).toUpperCase()}
+                    </Text>
+                  )}
                 </View>
                 <View>
                   <Text style={styles.childName}>{child.name}</Text>
@@ -1478,6 +1527,36 @@ const styles = StyleSheet.create({
   },
   settingsIcon: { fontSize: 20 },
 
+  // Dream Guardian Avatar in header
+  guardianAvatarBtn: {
+    width: 44, height: 44,
+    borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    position: 'relative',
+  },
+  guardianAvatarGlow: {
+    position: 'absolute',
+    width: 50, height: 50,
+    borderRadius: 25,
+    backgroundColor: 'transparent',
+    shadowColor: Colors.celestialGold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  guardianAvatarImg: {
+    width: 40, height: 40,
+    borderRadius: 20,
+  },
+  guardianAvatarRing: {
+    position: 'absolute',
+    width: 42, height: 42,
+    borderRadius: 21,
+    borderWidth: 1.5,
+    borderColor: Colors.celestialGold,
+  },
+
   // Collections section
   collectionsSection: { marginBottom: Spacing.xl },
   collectionsSectionHeader: {
@@ -1536,6 +1615,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
   },
   childAvatarEmoji: { fontFamily: Fonts.extraBold, fontSize: 22, color: '#fff' },
+  childAvatarImage: {
+    width: 50, height: 50,
+    borderRadius: 25,
+  },
+  childAvatarGlowRing: {
+    position: 'absolute',
+    width: 52, height: 52,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: Colors.celestialGold,
+    shadowColor: Colors.celestialGold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+  },
   childName:        { fontFamily: Fonts.extraBold, fontSize: 18, color: '#FFFFFF', letterSpacing: 0.2 },
   childAge:         { fontFamily: Fonts.regular, fontSize: 13, color: 'rgba(240,235,248,0.55)' },
   editChildButton:  {

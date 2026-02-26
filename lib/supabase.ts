@@ -451,13 +451,14 @@ export interface Profile {
   email: string | null;
   child_name: string | null;
   child_age: number | null;
+  avatar_url: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export async function upsertProfile(
   userId: string,
-  data: { email?: string; child_name?: string | null; child_age?: number | null }
+  data: { email?: string; child_name?: string | null; child_age?: number | null; avatar_url?: string | null }
 ): Promise<void> {
   if (!isSupabaseConfigured) {
     console.warn('[Supabase] upsertProfile skipped – Supabase not configured.');
