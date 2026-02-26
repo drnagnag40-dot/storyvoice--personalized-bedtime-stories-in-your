@@ -24,6 +24,7 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
@@ -136,6 +137,7 @@ const featureStyles = StyleSheet.create({
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ReadyForMagicScreen({ visible, onDismiss }: Props) {
+  const router = useRouter();
   // Entrance animations
   const overlayOpacity = useSharedValue(0);
   const panelTranslateY = useSharedValue(60);
@@ -306,6 +308,26 @@ export default function ReadyForMagicScreen({ visible, onDismiss }: Props) {
                   environment variables will sync automatically and the magic will be fully unlocked!
                 </Text>
               </View>
+
+              {/* ── Cloud Magic CTA ── */}
+              <TouchableOpacity
+                style={styles.cloudMagicBtn}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  onDismiss();
+                  router.push('/cloud-magic-onboarding');
+                }}
+                activeOpacity={0.88}
+              >
+                <LinearGradient
+                  colors={['#FFD700', '#FFC857', '#FF9F1C']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+                />
+                <View style={styles.cloudMagicBtnShine} />
+                <Text style={styles.cloudMagicBtnText}>✨ Unlock Cloud Magic</Text>
+              </TouchableOpacity>
 
               {/* Dismiss button */}
               <TouchableOpacity
@@ -529,6 +551,35 @@ const styles = StyleSheet.create({
     fontSize:      16,
     color:         Colors.moonlightCream,
     letterSpacing: 0.3,
+  },
+
+  // Cloud Magic CTA button
+  cloudMagicBtn: {
+    borderRadius:    Radius.full,
+    overflow:        'hidden',
+    paddingVertical: 18,
+    alignItems:      'center',
+    marginTop:       Spacing.sm,
+    shadowColor:     '#FFD700',
+    shadowOffset:    { width: 0, height: 6 },
+    shadowRadius:    18,
+    shadowOpacity:   0.45,
+    elevation:       10,
+  },
+  cloudMagicBtnShine: {
+    position:        'absolute',
+    top:             0,
+    left:            '25%',
+    right:           '25%',
+    height:          1,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderRadius:    1,
+  },
+  cloudMagicBtnText: {
+    fontFamily:    Fonts.extraBold,
+    fontSize:      17,
+    color:         '#0D0E24',
+    letterSpacing: 0.4,
   },
 
   // Footnote

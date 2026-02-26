@@ -444,6 +444,50 @@ export async function leaveFamilyGroup(userId: string, groupId: string): Promise
 }
 
 // ──────────────────────────────────────────────────────────
+// Profiles  (table: profiles) — Cloud Magic identity
+// ──────────────────────────────────────────────────────────
+export interface Profile {
+  id: string;
+  email: string | null;
+  child_name: string | null;
+  child_age: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function upsertProfile(
+  userId: string,
+  data: { email?: string; child_name?: string | null; child_age?: number | null }
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] upsertProfile skipped – Supabase not configured.');
+    return;
+  }
+  await supabase.from('profiles').upsert(
+    {
+      id: userId,
+      ...data,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' }
+  );
+}
+
+export async function getProfile(userId: string): Promise<Profile | null> {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase] getProfile skipped – Supabase not configured.');
+    return null;
+  }
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  if (error) return null;
+  return data as Profile | null;
+}
+
+// ──────────────────────────────────────────────────────────
 // Full user data deletion (for account deletion)
 // ──────────────────────────────────────────────────────────
 export async function deleteAllUserData(userId: string) {

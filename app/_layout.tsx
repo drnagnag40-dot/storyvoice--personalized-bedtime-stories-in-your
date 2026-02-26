@@ -280,6 +280,10 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="walkthrough" options={{ animation: 'fade', gestureEnabled: false }} />
           <Stack.Screen name="welcome" />
+          <Stack.Screen
+            name="cloud-magic-onboarding"
+            options={{ animation: 'slide_from_right', gestureEnabled: true }}
+          />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(onboarding)" />
           <Stack.Screen name="(main)" />

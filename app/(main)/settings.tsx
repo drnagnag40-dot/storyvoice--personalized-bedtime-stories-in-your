@@ -676,6 +676,13 @@ export default function SettingsScreen() {
 
   const accountRows: SettingRow[] = [
     {
+      icon: '🔭',
+      label: "Parent's Observatory",
+      value: 'Cloud Magic identity & profile',
+      chevron: true,
+      onPress: () => router.push('/(main)/observatory'),
+    },
+    {
       icon: '🚪',
       label: 'Sign Out',
       chevron: true,
