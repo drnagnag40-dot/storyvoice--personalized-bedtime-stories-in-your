@@ -9,6 +9,7 @@ import {
   Dimensions,
   Image,
   Platform,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,6 +24,7 @@ import Animated, {
   withRepeat,
   withSequence,
   withDelay,
+  withSpring,
   Easing,
   interpolate,
   cancelAnimation,
@@ -185,6 +187,244 @@ function ThemeCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Weekly story limit helpers (free tier: 3 stories/week)
+// ─────────────────────────────────────────────────────────────────────────────
+const FREE_WEEKLY_LIMIT = 3;
+const WEEKLY_STORIES_KEY = 'weekly_stories_data';
+
+interface WeeklyData {
+  weekStart: string; // ISO date of Monday
+  count: number;
+}
+
+function getMonday(date: Date): string {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+async function getWeeklyStoriesCount(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(WEEKLY_STORIES_KEY);
+    if (!raw) return 0;
+    const data: WeeklyData = JSON.parse(raw);
+    const currentWeek = getMonday(new Date());
+    if (data.weekStart !== currentWeek) return 0; // New week → reset
+    return data.count;
+  } catch {
+    return 0;
+  }
+}
+
+async function incrementWeeklyStoriesCount(): Promise<void> {
+  try {
+    const currentWeek = getMonday(new Date());
+    const raw = await AsyncStorage.getItem(WEEKLY_STORIES_KEY);
+    let data: WeeklyData = { weekStart: currentWeek, count: 0 };
+    if (raw) {
+      const parsed: WeeklyData = JSON.parse(raw);
+      if (parsed.weekStart === currentWeek) {
+        data = { ...parsed, count: parsed.count + 1 };
+      } else {
+        data = { weekStart: currentWeek, count: 1 };
+      }
+    } else {
+      data = { weekStart: currentWeek, count: 1 };
+    }
+    await AsyncStorage.setItem(WEEKLY_STORIES_KEY, JSON.stringify(data));
+  } catch {
+    // non-fatal
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stardust Limit Reached Modal
+// ─────────────────────────────────────────────────────────────────────────────
+const { width: MODAL_W } = Dimensions.get('window');
+
+function StardustLimitModal({
+  visible,
+  onClose,
+  onUpgrade,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onUpgrade: () => void;
+}) {
+  const scale = useSharedValue(0.85);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible) {
+      scale.value = withSpring(1, { damping: 14, stiffness: 180 });
+      opacity.value = withTiming(1, { duration: 300 });
+    } else {
+      scale.value = withTiming(0.85, { duration: 200 });
+      opacity.value = withTiming(0, { duration: 200 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const contentStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <View style={limitModal.overlay}>
+        <Animated.View style={[limitModal.card, contentStyle]}>
+          {Platform.OS !== 'web' && (
+            <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+          )}
+          <LinearGradient
+            colors={['rgba(14,8,32,0.96)', 'rgba(26,10,60,0.92)']}
+            style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+          />
+          {/* Top shine */}
+          <View style={limitModal.shine} />
+
+          <Text style={limitModal.emoji}>⭐</Text>
+          <Text style={limitModal.title}>Stardust Limit Reached</Text>
+          <Text style={limitModal.subtitle}>
+            {"You've used all 3 stories for this week on the Star-Seeker plan."}
+          </Text>
+
+          <View style={limitModal.infoBox}>
+            <LinearGradient
+              colors={['rgba(255,215,0,0.10)', 'rgba(255,215,0,0.04)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.md }]}
+            />
+            <Text style={limitModal.infoText}>
+              {'✦ Upgrade to '}
+              <Text style={limitModal.infoHighlight}>Galaxy-Traveler</Text>
+              {' for unlimited story generation and exclusive narrators.'}
+            </Text>
+          </View>
+
+          {/* Upgrade CTA */}
+          <TouchableOpacity
+            style={limitModal.upgradeBtn}
+            onPress={onUpgrade}
+            activeOpacity={0.88}
+          >
+            <LinearGradient
+              colors={['#FFD700', '#FFC857', '#E8A800']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            <Text style={limitModal.upgradeBtnText}>🌌 Unlock Galaxy-Traveler</Text>
+          </TouchableOpacity>
+
+          {/* Dismiss */}
+          <TouchableOpacity style={limitModal.dismissBtn} onPress={onClose} activeOpacity={0.7}>
+            <Text style={limitModal.dismissText}>Maybe later</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
+const limitModal = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  card: {
+    width: Math.min(MODAL_W - 40, 340),
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,215,0,0.25)',
+    padding: Spacing.xl,
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  shine: {
+    position: 'absolute',
+    top: 0,
+    left: '20%',
+    right: '20%',
+    height: 1,
+    backgroundColor: 'rgba(255,215,0,0.2)',
+  },
+  emoji: { fontSize: 44 },
+  title: {
+    fontFamily: Fonts.black,
+    fontSize: 20,
+    color: Colors.celestialGold,
+    textAlign: 'center',
+    letterSpacing: 0.3,
+    textShadowColor: 'rgba(255,215,0,0.4)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  subtitle: {
+    fontFamily: Fonts.medium,
+    fontSize: 14,
+    color: Colors.textLight,
+    textAlign: 'center',
+    lineHeight: 22,
+    opacity: 0.85,
+  },
+  infoBox: {
+    width: '100%',
+    padding: 14,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.2)',
+    overflow: 'hidden',
+  },
+  infoText: {
+    fontFamily: Fonts.medium,
+    fontSize: 13,
+    color: Colors.textLight,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  infoHighlight: {
+    fontFamily: Fonts.black,
+    color: Colors.celestialGold,
+  },
+  upgradeBtn: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: Radius.xl,
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: Colors.celestialGold,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  upgradeBtnText: {
+    fontFamily: Fonts.black,
+    fontSize: 15,
+    color: Colors.deepSpace,
+    letterSpacing: 0.4,
+  },
+  dismissBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  dismissText: {
+    fontFamily: Fonts.medium,
+    fontSize: 13,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
 const { width: W } = Dimensions.get('window');
@@ -214,6 +454,7 @@ export default function CreateStoryScreen() {
 
   const [isInteractiveMode, setIsInteractiveMode] = useState(false);
   const [appLanguage, setAppLanguage] = useState('en');
+  const [showLimitModal, setShowLimitModal] = useState(false);
 
   // Image transform hook
   const { transformImage } = useImageTransform();
@@ -389,6 +630,16 @@ export default function CreateStoryScreen() {
       return;
     }
 
+    // ── Weekly limit check for free tier ──────────────────────────────
+    if (!isPremium) {
+      const weeklyCount = await getWeeklyStoriesCount();
+      if (weeklyCount >= FREE_WEEKLY_LIMIT) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setShowLimitModal(true);
+        return;
+      }
+    }
+
     const themeObj = STORY_THEMES.find((t) => t.id === selectedTheme);
     const storyTitle = `A ${themeObj?.label ?? 'Magical'} Story for ${child.name}`;
 
@@ -517,6 +768,12 @@ export default function CreateStoryScreen() {
       // ── Step 5: Navigate to the immersive player ─────────────────────
       setIsGenerating(false);
       setGenerationStep('');
+
+      // Track weekly story count for free-tier limit
+      if (!isPremium) {
+        void incrementWeeklyStoriesCount();
+      }
+
       // Celebratory haptic cascade on story completion
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTimeout(() => {
@@ -938,6 +1195,16 @@ export default function CreateStoryScreen() {
           )}
         </Animated.View>
       </ScrollView>
+
+      {/* Stardust Limit Reached modal */}
+      <StardustLimitModal
+        visible={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        onUpgrade={() => {
+          setShowLimitModal(false);
+          router.push('/(main)/stardust-shop');
+        }}
+      />
     </View>
   );
 }

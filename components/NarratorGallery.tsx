@@ -18,9 +18,11 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { useAdapty } from '@/hooks/useAdapty';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -53,13 +55,17 @@ const STORAGE_KEY = 'selected_narrator_id';
 function CharacterCard({
   narrator,
   isSelected,
+  isLocked,
   onPress,
   onPreview,
+  onLockedPress,
 }: {
   narrator: NarratorPersonality;
   isSelected: boolean;
+  isLocked: boolean;
   onPress: () => void;
   onPreview: () => void;
+  onLockedPress: () => void;
 }) {
   const glowOpacity = useSharedValue(isSelected ? 1 : 0);
   const pulseScale  = useSharedValue(1);
@@ -94,6 +100,11 @@ function CharacterCard({
   }, [isSelected]);
 
   const handlePress = () => {
+    if (isLocked) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onLockedPress();
+      return;
+    }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onPress();
@@ -162,18 +173,35 @@ function CharacterCard({
         {isSelected && (
           <View style={[styles.selectedDot, { backgroundColor: narrator.accentColor }]} />
         )}
+
+        {/* Premium lock overlay */}
+        {isLocked && (
+          <View style={styles.lockOverlay}>
+            <LinearGradient
+              colors={['rgba(14,8,32,0.72)', 'rgba(14,8,32,0.55)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+            />
+            <View style={styles.lockIconWrapper}>
+              <Text style={styles.lockIcon}>🔒</Text>
+            </View>
+            <Text style={styles.lockLabel}>Pro</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       {/* Preview button */}
       <TouchableOpacity
-        style={styles.previewBtn}
+        style={[styles.previewBtn, isLocked && styles.previewBtnLocked]}
         onPress={() => {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          if (isLocked) { onLockedPress(); return; }
           onPreview();
         }}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
-        <Text style={styles.previewBtnText}>▷ Preview</Text>
+        <Text style={[styles.previewBtnText, isLocked && styles.previewBtnTextLocked]}>
+          {isLocked ? '🔒 Unlock' : '▷ Preview'}
+        </Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -352,6 +380,8 @@ interface NarratorGalleryProps {
 }
 
 export default function NarratorGallery({ childName, onNarratorSelected }: NarratorGalleryProps) {
+  const router = useRouter();
+  const { isPremium } = useAdapty();
   const [selectedId,     setSelectedId]     = useState<string>('luna');
   const [previewNarrator, setPreviewNarrator] = useState<NarratorPersonality | null>(null);
   const [showPreview,    setShowPreview]    = useState(false);
@@ -372,12 +402,17 @@ export default function NarratorGallery({ childName, onNarratorSelected }: Narra
   }, []);
 
   const handleSelect = useCallback(async (narrator: NarratorPersonality) => {
+    // If premium narrator and user is not premium, go to shop
+    if (narrator.isPremium && !isPremium) {
+      router.push('/(main)/stardust-shop');
+      return;
+    }
     setSelectedId(narrator.id);
     await AsyncStorage.setItem(STORAGE_KEY, narrator.id);
     // Track narrator popularity for internal analytics
     void trackNarratorSelected(narrator.id);
     onNarratorSelected?.(narrator);
-  }, [onNarratorSelected]);
+  }, [onNarratorSelected, isPremium, router]);
 
   const handlePreview = useCallback((narrator: NarratorPersonality) => {
     setPreviewNarrator(narrator);
@@ -412,14 +447,19 @@ export default function NarratorGallery({ childName, onNarratorSelected }: Narra
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <CharacterCard
-            narrator={item}
-            isSelected={item.id === selectedId}
-            onPress={() => void handleSelect(item)}
-            onPreview={() => handlePreview(item)}
-          />
-        )}
+        renderItem={({ item }) => {
+          const locked = !!item.isPremium && !isPremium;
+          return (
+            <CharacterCard
+              narrator={item}
+              isSelected={item.id === selectedId}
+              isLocked={locked}
+              onPress={() => void handleSelect(item)}
+              onPreview={() => handlePreview(item)}
+              onLockedPress={() => router.push('/(main)/stardust-shop')}
+            />
+          );
+        }}
       />
 
       {/* Selected narrator tagline */}
@@ -551,6 +591,41 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize:   10,
     color:      Colors.textMuted,
+  },
+  previewBtnLocked: {
+    borderColor:     'rgba(255,215,0,0.4)',
+    backgroundColor: 'rgba(255,215,0,0.08)',
+  },
+  previewBtnTextLocked: {
+    color: Colors.celestialGold,
+  },
+
+  // Lock overlay
+  lockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius:   Radius.xl,
+    alignItems:     'center',
+    justifyContent: 'center',
+    overflow:       'hidden',
+    gap:            2,
+  },
+  lockIconWrapper: {
+    width:           32,
+    height:          32,
+    borderRadius:    16,
+    backgroundColor: 'rgba(255,215,0,0.18)',
+    borderWidth:     1.5,
+    borderColor:     'rgba(255,215,0,0.5)',
+    alignItems:      'center',
+    justifyContent:  'center',
+  },
+  lockIcon: { fontSize: 14 },
+  lockLabel: {
+    fontFamily:  Fonts.black,
+    fontSize:    9,
+    color:       Colors.celestialGold,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
 
   // Tagline row

@@ -38,6 +38,7 @@ export interface NarratorPersonality {
   accentColor: string;
   glowColor: string;
   previewText: string;
+  isPremium?: boolean;
 }
 
 export const NARRATOR_PERSONALITIES: NarratorPersonality[] = [
@@ -88,6 +89,7 @@ export const NARRATOR_PERSONALITIES: NarratorPersonality[] = [
     accentColor: '#34D399',
     glowColor: '#059669',
     previewText: 'Breathe in… and breathe out… let each word… carry you… to rest…',
+    isPremium: true,
   },
   {
     id: 'rex',
@@ -100,6 +102,20 @@ export const NARRATOR_PERSONALITIES: NarratorPersonality[] = [
     accentColor: '#F87171',
     glowColor: '#DC2626',
     previewText: 'In the age before memory, when mountains were young and oceans sang…',
+    isPremium: true,
+  },
+  {
+    id: 'seraphina',
+    name: 'Seraphina',
+    species: 'the Star-Whale',
+    emoji: '🐋',
+    style: 'whisper',
+    description: 'Ancient, cosmic & celestially serene',
+    tagline: 'Ride the stardust waves to sleep…',
+    accentColor: '#A78BFA',
+    glowColor: '#7C3AED',
+    previewText: 'From the deep oceans of the cosmos, I carry you on gentle starlit currents… to the softest dreams…',
+    isPremium: true,
   },
 ];
 

@@ -47,6 +47,7 @@ import { useImageGeneration } from '@fastshot/ai';
 import StarField from '@/components/StarField';
 import { upsertProfile, getProfile } from '@/lib/supabase';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { useAdapty } from '@/hooks/useAdapty';
 
 const { width: W } = Dimensions.get('window');
 
@@ -1166,6 +1167,7 @@ export default function ObservatoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
+  const { isPremium, restorePurchases, isLoading: adaptyLoading } = useAdapty();
 
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState<number | null>(null);
@@ -1380,6 +1382,82 @@ export default function ObservatoryScreen() {
             </TouchableOpacity>
           </GlassSection>
 
+          {/* ── Subscription section ── */}
+          <GlassSection
+            title="Subscription"
+            icon="✦"
+            accentColor={Colors.celestialGold}
+            delay={280}
+          >
+            {/* Tier display */}
+            <View style={styles.subTierRow}>
+              <View style={[
+                styles.subTierBadge,
+                isPremium && styles.subTierBadgePro,
+              ]}>
+                {isPremium ? (
+                  <>
+                    <LinearGradient
+                      colors={['rgba(255,215,0,0.18)', 'rgba(255,215,0,0.06)']}
+                      style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+                    />
+                    <Text style={styles.subTierEmoji}>🌌</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.subTierName}>Galaxy-Traveler</Text>
+                      <Text style={styles.subTierLabel}>Pro · Active</Text>
+                    </View>
+                    <View style={styles.subTierActiveDot} />
+                  </>
+                ) : (
+                  <>
+                    <LinearGradient
+                      colors={['rgba(255,255,255,0.07)', 'rgba(255,255,255,0.02)']}
+                      style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+                    />
+                    <Text style={styles.subTierEmoji}>🌙</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.subTierNameFree}>Star-Seeker</Text>
+                      <Text style={styles.subTierLabel}>Free Plan</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            </View>
+
+            {!isPremium && (
+              <TouchableOpacity
+                style={styles.upgradeShortcutBtn}
+                onPress={() => router.push('/(main)/stardust-shop')}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['rgba(255,215,0,0.18)', 'rgba(255,215,0,0.08)']}
+                  style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+                />
+                <Text style={styles.upgradeShortcutText}>✦ Unlock Galaxy-Traveler →</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Restore purchases */}
+            <TouchableOpacity
+              style={styles.restoreSubBtn}
+              onPress={async () => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                const ok = await restorePurchases();
+                Alert.alert(
+                  ok ? '✨ Restored' : 'No Purchase Found',
+                  ok
+                    ? 'Galaxy-Traveler restored successfully!'
+                    : 'No active subscription was found to restore.'
+                );
+              }}
+              activeOpacity={0.7}
+              disabled={adaptyLoading}
+            >
+              <Text style={styles.restoreSubText}>Restore Purchases</Text>
+            </TouchableOpacity>
+          </GlassSection>
+
           {/* ── Child's Cosmic Identity section ── */}
           <GlassSection
             title="Child's Cosmic Identity"
@@ -1555,6 +1633,77 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     opacity: 0.6,
     marginTop: 4,
+  },
+
+  // Subscription section
+  subTierRow: { marginBottom: Spacing.sm },
+  subTierBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
+  },
+  subTierBadgePro: {
+    borderColor: 'rgba(255,215,0,0.35)',
+  },
+  subTierEmoji: { fontSize: 28 },
+  subTierName: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 15,
+    color: Colors.celestialGold,
+    letterSpacing: 0.3,
+  },
+  subTierNameFree: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 15,
+    color: Colors.textLight,
+    letterSpacing: 0.3,
+  },
+  subTierLabel: {
+    fontFamily: Fonts.regular,
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  subTierActiveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.successGreen,
+    shadowColor: Colors.successGreen,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  upgradeShortcutBtn: {
+    paddingVertical: 14,
+    borderRadius: Radius.lg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.3)',
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
+  },
+  upgradeShortcutText: {
+    fontFamily: Fonts.bold,
+    fontSize: 14,
+    color: Colors.celestialGold,
+    letterSpacing: 0.3,
+  },
+  restoreSubBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  restoreSubText: {
+    fontFamily: Fonts.medium,
+    fontSize: 13,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
   },
 
   // Sign out
